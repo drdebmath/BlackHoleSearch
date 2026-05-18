@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Black Hole Search — Byzantine Agents Simulator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header>
+  <div>
+    <div class="logo">⬛ BHS SIMULATOR</div>
+    <div class="subtitle">BLACK HOLE SEARCH · BYZANTINE FAULT TOLERANCE</div>
+  </div>
+  <div class="badges">
+    <span class="badge badge-byz">BYZANTINE AGENTS</span>
+    <span class="badge badge-bh">BLACK HOLE</span>
+    <span class="badge badge-safe">ICDCS 2025</span>
+  </div>
+</header>
+
+<div class="main">
+
+  <!-- LEFT PANEL -->
+  <div class="left-panel">
+    <div class="section-title">// GRAPH CONFIG</div>
+    <div class="controls">
+
+      <label>
+        GRAPH TOPOLOGY
+        <select id="topoSelect">
+          <option value="random">Random Connected Graph</option>
+          <option value="ring">Ring</option>
+          <option value="complete">Complete Graph</option>
+          <option value="grid">Grid</option>
+          <option value="tree">Balanced Tree</option>
+          <option value="star">Star</option>
+        </select>
+      </label>
+
+      <label>
+        NODES — <span class="val-display" id="nVal">8</span>
+        <input type="range" id="nNodes" min="4" max="16" value="8">
+      </label>
+
+      <label>
+        BYZANTINE AGENTS (f) — <span class="val-display" id="fVal">1</span>
+        <input type="range" id="fFault" min="0" max="5" value="1">
+      </label>
+
+      <label>
+        COMMUNICATION MODEL
+        <select id="commModel">
+          <option value="whiteboard">Whiteboard</option>
+          <option value="local">Local (Face-to-Face)</option>
+        </select>
+      </label>
+
+      <label>
+        TOPOLOGY KNOWLEDGE
+        <select id="topoKnow">
+          <option value="known">Known Map (DFS)</option>
+          <option value="unknown">Unknown Map (Explore)</option>
+        </select>
+      </label>
+
+      <div class="formula-box" id="formulaBox">
+        — configure above —
+      </div>
+
+      <div class="sep"></div>
+
+      <label>
+        SIMULATION SPEED
+        <select id="speedSel">
+          <option value="800">Slow</option>
+          <option value="400" selected>Normal</option>
+          <option value="150">Fast</option>
+          <option value="40">Turbo</option>
+        </select>
+      </label>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="buildBtn">BUILD GRAPH</button>
+        <button class="btn btn-warn"    id="resetBtn">RESET</button>
+      </div>
+      <button class="btn btn-primary" id="runBtn" disabled>▶ RUN SIMULATION</button>
+      <button class="btn btn-danger"  id="stepBtn" disabled>STEP →</button>
+
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="dot" style="background:#00e5ff"></div>GOOD AGENT</div>
+      <div class="legend-item"><div class="dot" style="background:#c850f0"></div>BYZANTINE</div>
+      <div class="legend-item"><div class="dot" style="background:#ff3d5a"></div>BLACK HOLE</div>
+      <div class="legend-item"><div class="dot" style="background:#00e676"></div>SAFE NODE</div>
+      <div class="legend-item"><div class="dot" style="background:#ffb700;border-radius:0"></div>HOMEBASE</div>
+      <div class="legend-item"><div class="dot" style="background:#4a5568"></div>UNEXPLORED</div>
+    </div>
+  </div>
+
+  <!-- GRAPH -->
+  <div class="graph-area">
+    <div id="cy"></div>
+    <div id="overlay">
+      <div class="ov-title" id="ovTitle">—</div>
+      <div class="ov-sub" id="ovSub">—</div>
+      <button class="btn btn-primary" id="overlayCloseBtn" style="pointer-events:auto;width:180px;margin-top:8px">CLOSE</button>
+    </div>
+    <div id="tooltip"></div>
+  </div>
+
+  <!-- RIGHT PANEL -->
+  <div class="right-panel">
+    <div class="stats-grid">
+      <div class="stat-cell">
+        <div class="stat-label">ROUND</div>
+        <div class="stat-val sv-cyan" id="sRound">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">AGENTS ALIVE</div>
+        <div class="stat-val sv-green" id="sAlive">—</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">LOST IN BH</div>
+        <div class="stat-val sv-red" id="sLost">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">BYZ FOUND</div>
+        <div class="stat-val sv-purple" id="sByzFound">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">EDGES SAFE</div>
+        <div class="stat-val sv-green" id="sEdgeSafe">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">EDGES DANGER</div>
+        <div class="stat-val sv-red" id="sEdgeDanger">0</div>
+      </div>
+    </div>
+
+    <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progressBar"></div></div>
+
+    <div class="tab-bar">
+      <div class="tab active" data-tab="log">EVENT LOG</div>
+      <div class="tab" data-tab="edges">EDGE STATUS</div>
+      <div class="tab" data-tab="agents">AGENTS</div>
+    </div>
+
+    <div class="tab-content active" id="tab-log">
+      <div id="log"></div>
+    </div>
+
+    <div class="tab-content" id="tab-edges">
+      <div class="edge-table" id="edgeTable"></div>
+    </div>
+
+    <div class="tab-content" id="tab-agents">
+      <div class="agent-section" style="max-height:none;flex:1;">
+        <div class="agent-list" id="agentList"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
