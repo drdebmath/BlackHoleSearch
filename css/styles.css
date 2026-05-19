@@ -10,8 +10,28 @@
   --text: #c8d6e5;
   --dim: #4a5568;
   --glow: 0 0 16px rgba(0, 229, 255, 0.35);
+  --grid: rgba(30, 37, 48, 0.4);
+  --overlay-bg: rgba(10, 12, 15, 0.85);
+  --formula-bg: rgba(0, 0, 0, 0.3);
   --font-mono: 'Share Tech Mono', monospace;
   --font-ui: 'Rajdhani', sans-serif;
+}
+
+:root.light {
+  --bg: #f6f9fc;
+  --panel: #ffffff;
+  --border: #d6e0ea;
+  --accent: #007f99;
+  --danger: #c62f46;
+  --warn: #9a6700;
+  --safe: #087f4b;
+  --byzantine: #8d3bb0;
+  --text: #1f2933;
+  --dim: #64748b;
+  --glow: none;
+  --grid: rgba(100, 116, 139, 0.18);
+  --overlay-bg: rgba(246, 249, 252, 0.88);
+  --formula-bg: rgba(255, 255, 255, 0.72);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -64,6 +84,20 @@ header .badges {
 .badge-byz  { background: rgba(200, 80, 240, 0.15); border: 1px solid var(--byzantine); color: var(--byzantine); }
 .badge-bh   { background: rgba(255, 61, 90, 0.12);  border: 1px solid var(--danger);    color: var(--danger); }
 .badge-safe { background: rgba(0, 230, 118, 0.1);   border: 1px solid var(--safe);      color: var(--safe); }
+
+.theme-toggle {
+  width: auto;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 1px;
+}
+.theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── MAIN LAYOUT ── */
 .main {
@@ -212,8 +246,8 @@ select:focus { border-color: var(--accent); }
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(30, 37, 48, 0.4) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(30, 37, 48, 0.4) 1px, transparent 1px);
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
   background-size: 40px 40px;
   pointer-events: none;
 }
@@ -326,7 +360,7 @@ select:focus { border-color: var(--accent); }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 12, 15, 0.85);
+  background: var(--overlay-bg);
   z-index: 100;
   flex-direction: column;
   gap: 12px;
@@ -424,7 +458,7 @@ select:focus { border-color: var(--accent); }
 }
 
 .formula-box {
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--formula-bg);
   border: 1px solid var(--border);
   border-radius: 2px;
   padding: 8px 10px;

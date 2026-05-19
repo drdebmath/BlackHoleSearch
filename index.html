@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Black Hole Search — Byzantine Agents Simulator</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.28.1/cytoscape.min.js"></script>
+<script>
+if (localStorage.getItem('theme') === 'light') document.documentElement.classList.add('light');
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -20,6 +23,7 @@
     <span class="badge badge-bh">BLACK HOLE</span>
     <span class="badge badge-safe">ICDCS 2025</span>
   </div>
+  <button class="theme-toggle" id="themeToggle" type="button">LIGHT MODE</button>
 </header>
 
 <div class="main">
@@ -168,5 +172,19 @@
 </div>
 
 <script type="module" src="js/main.js"></script>
+<script>
+const themeToggle = document.getElementById('themeToggle');
+function syncThemeToggle() {
+  const light = document.documentElement.classList.contains('light');
+  themeToggle.textContent = light ? 'DARK MODE' : 'LIGHT MODE';
+  themeToggle.setAttribute('aria-label', light ? 'Switch to dark mode' : 'Switch to light mode');
+}
+themeToggle.onclick = () => {
+  document.documentElement.classList.toggle('light');
+  localStorage.setItem('theme', document.documentElement.classList.contains('light') ? 'light' : 'dark');
+  syncThemeToggle();
+};
+syncThemeToggle();
+</script>
 </body>
 </html>
