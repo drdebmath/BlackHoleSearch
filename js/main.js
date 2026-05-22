@@ -9,6 +9,8 @@ const fFault  = $('fFault');
 const runBtn  = $('runBtn');
 const panelToggle = $('panelToggle');
 const panelStoreKey = 'bhs-panels-collapsed';
+const mobilePanelStoreKey = 'bhs-mobile-panels-collapsed';
+const mobilePanelQuery = window.matchMedia('(max-width: 900px)');
 
 function refreshGraphViewport() {
   window.setTimeout(() => {
@@ -19,24 +21,41 @@ function refreshGraphViewport() {
 }
 
 function setPanelsCollapsed(collapsed, persist = true) {
+  const mobile = mobilePanelQuery.matches;
   document.body.classList.toggle('panels-collapsed', collapsed);
   panelToggle.setAttribute('aria-expanded', String(!collapsed));
   panelToggle.setAttribute('aria-label', collapsed ? 'Show controls and status panels' : 'Hide controls and status panels');
   panelToggle.title = collapsed ? 'Show panels' : 'Hide panels';
 
   const label = panelToggle.querySelector('.panel-toggle-label');
-  if (label) label.textContent = collapsed ? 'SHOW PANELS' : 'HIDE PANELS';
-  if (persist) localStorage.setItem(panelStoreKey, collapsed ? 'true' : 'false');
+  if (label) {
+    label.textContent = mobile
+      ? (collapsed ? 'OPEN UI' : 'VIEW SIM')
+      : (collapsed ? 'SHOW PANELS' : 'HIDE PANELS');
+  }
+  if (persist) {
+    localStorage.setItem(mobile ? mobilePanelStoreKey : panelStoreKey, collapsed ? 'true' : 'false');
+  }
   refreshGraphViewport();
 }
 
 if (panelToggle) {
-  const storedPanelState = localStorage.getItem(panelStoreKey);
-  const mobileDefault = window.matchMedia('(max-width: 900px)').matches;
-  setPanelsCollapsed(storedPanelState === null ? mobileDefault : storedPanelState === 'true', false);
+  const syncPanelStateForViewport = () => {
+    const mobile = mobilePanelQuery.matches;
+    const key = mobile ? mobilePanelStoreKey : panelStoreKey;
+    const storedPanelState = localStorage.getItem(key);
+    setPanelsCollapsed(storedPanelState === null ? mobile : storedPanelState === 'true', false);
+  };
+
+  syncPanelStateForViewport();
   panelToggle.addEventListener('click', () => {
     setPanelsCollapsed(!document.body.classList.contains('panels-collapsed'));
   });
+  if (mobilePanelQuery.addEventListener) {
+    mobilePanelQuery.addEventListener('change', syncPanelStateForViewport);
+  } else {
+    mobilePanelQuery.addListener(syncPanelStateForViewport);
+  }
 }
 window.addEventListener('resize', refreshGraphViewport);
 

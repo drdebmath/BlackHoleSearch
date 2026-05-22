@@ -596,58 +596,112 @@ body.panels-collapsed .right-panel {
   header {
     padding: 8px 10px;
     gap: 8px;
+    min-height: 48px;
   }
 
   header .logo { font-size: 16px; }
   header .subtitle { font-size: 10px; }
   header .badges { display: none; }
 
-  .main { position: relative; }
+  .main {
+    position: relative;
+    min-height: 0;
+  }
 
   .left-panel,
   .right-panel {
     position: absolute;
-    top: 0;
-    bottom: 0;
+    left: 8px;
+    right: 8px;
+    width: auto;
+    opacity: 1;
+    pointer-events: auto;
+    border: 1px solid var(--border);
+    transform: translateY(0);
     z-index: 30;
-    width: min(84vw, 310px);
-    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35);
+    box-shadow: 0 18px 45px rgba(0, 0, 0, 0.45);
+    transition: transform 0.24s ease, opacity 0.18s ease;
   }
 
   .left-panel {
-    left: 0;
-    transform: translateX(0);
+    top: 8px;
+    bottom: 45%;
+    border-radius: 4px 4px 0 0;
   }
 
   .right-panel {
-    right: 0;
-    transform: translateX(0);
+    top: 55%;
+    bottom: 8px;
+    border-radius: 0 0 4px 4px;
   }
 
   body.panels-collapsed .left-panel {
-    width: min(84vw, 310px);
-    transform: translateX(-105%);
+    width: auto;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(calc(100% + 12px));
   }
 
   body.panels-collapsed .right-panel {
-    width: min(84vw, 310px);
-    transform: translateX(105%);
+    width: auto;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(calc(100% + 12px));
   }
 
-  .panel-toggle-label { display: none; }
+  .section-title {
+    padding: 8px 12px 5px;
+  }
+
+  .controls {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .legend {
+    padding: 8px 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stats-grid .stat-cell {
+    padding: 7px 9px;
+  }
+
+  .stat-val {
+    font-size: 18px;
+  }
+
+  #log,
+  .edge-table,
+  .agent-list {
+    padding: 7px 10px;
+  }
+
+  .panel-toggle-label { display: inline; }
 
   .panel-toggle,
   .theme-toggle {
     min-height: 30px;
     padding: 5px 8px;
   }
+
+  .panel-toggle {
+    margin-left: auto;
+  }
 }
 
 @media (max-width: 560px) {
-  header { flex-wrap: wrap; }
+  header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+  }
   header .subtitle { display: none; }
   header .logo { font-size: 15px; letter-spacing: 1px; }
-  .theme-toggle { font-size: 10px; }
+  .panel-toggle-label,
+  .theme-toggle {
+    font-size: 10px;
+  }
   .legend { grid-template-columns: 1fr; }
   .agent-particle {
     width: 12px;
