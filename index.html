@@ -23,13 +23,17 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     <span class="badge badge-bh">BLACK HOLE</span>
     <span class="badge badge-safe">ICDCS 2025</span>
   </div>
+  <button class="panel-toggle" id="panelToggle" type="button" aria-controls="simControls simStatus" aria-expanded="true" title="Hide panels">
+    <span class="panel-toggle-icon" aria-hidden="true"><span></span><span></span><span></span></span>
+    <span class="panel-toggle-label">HIDE PANELS</span>
+  </button>
   <button class="theme-toggle" id="themeToggle" type="button">LIGHT MODE</button>
 </header>
 
 <div class="main">
 
   <!-- LEFT PANEL -->
-  <div class="left-panel">
+  <div class="left-panel" id="simControls">
     <div class="section-title">// GRAPH CONFIG</div>
     <div class="controls">
 
@@ -97,18 +101,20 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     </div>
 
     <div class="legend">
-      <div class="legend-item"><div class="dot" style="background:#00e5ff"></div>GOOD AGENT</div>
-      <div class="legend-item"><div class="dot" style="background:#c850f0"></div>BYZANTINE</div>
-      <div class="legend-item"><div class="dot" style="background:#ff3d5a"></div>BLACK HOLE</div>
-      <div class="legend-item"><div class="dot" style="background:#00e676"></div>SAFE NODE</div>
-      <div class="legend-item"><div class="dot" style="background:#ffb700;border-radius:0"></div>HOMEBASE</div>
-      <div class="legend-item"><div class="dot" style="background:#4a5568"></div>UNEXPLORED</div>
+      <div class="legend-item"><div class="dot dot-good"></div>GOOD AGENT</div>
+      <div class="legend-item"><div class="dot dot-byz"></div>BYZANTINE</div>
+      <div class="legend-item"><div class="dot dot-identified"></div>IDENTIFIED BYZ</div>
+      <div class="legend-item"><div class="dot dot-bh"></div>BLACK HOLE</div>
+      <div class="legend-item"><div class="dot dot-safe"></div>SAFE NODE</div>
+      <div class="legend-item"><div class="dot dot-home"></div>HOMEBASE</div>
+      <div class="legend-item"><div class="dot dot-unexplored"></div>UNEXPLORED</div>
     </div>
   </div>
 
   <!-- GRAPH -->
   <div class="graph-area">
     <div id="cy"></div>
+    <div id="agentLayer" aria-hidden="true"></div>
     <div id="overlay">
       <div class="ov-title" id="ovTitle">—</div>
       <div class="ov-sub" id="ovSub">—</div>
@@ -118,7 +124,7 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
   </div>
 
   <!-- RIGHT PANEL -->
-  <div class="right-panel">
+  <div class="right-panel" id="simStatus">
     <div class="stats-grid">
       <div class="stat-cell">
         <div class="stat-label">ROUND</div>

@@ -25,6 +25,7 @@ export function updateAgentChips() {
     const chip = document.createElement('div');
     const classes = ['agent-chip'];
     if (!a.alive) classes.push('dead');
+    else if (a.byzantine && a.identified) classes.push('identified');
     else if (a.byzantine) classes.push('byz');
     else classes.push('good');
     if (a.alive && simState.activeAgentId === a.id) classes.push('active');

@@ -26,6 +26,8 @@ export function buildGraph() {
   const { nodes, edges } = generateGraph(topo, n);
   initCy(nodes, edges);
   const cy = cyRef.instance;
+  cy.on('pan zoom resize layoutstop', renderAgentsOnGraph);
+  cy.on('position', 'node', renderAgentsOnGraph);
 
   const homebase = 0;
   const neighbors = buildNeighbors(n, edges);
@@ -452,7 +454,10 @@ function edgeKey(a, b) {
 }
 
 export function renderAgentsOnGraph() {
-  if (!simState) return;
+  const layer = $('agentLayer');
+  if (layer) layer.innerHTML = '';
+  if (!simState || !cyRef.instance) return;
+
   cyRef.instance.nodes().forEach(node => {
     const nid = +node.id().slice(1);
     const agentsHere = simState.agents.filter(a => a.alive && a.pos === nid);
@@ -462,6 +467,44 @@ export function renderAgentsOnGraph() {
     if (goodCount > 0) label += `\nG${goodCount}`;
     if (byzCount  > 0) label += `\nB${byzCount}`;
     node.data('label', label);
+  });
+
+  if (!layer) return;
+
+  const agentsByNode = new Map();
+  simState.agents
+    .filter(agent => agent.alive)
+    .forEach(agent => {
+      if (!agentsByNode.has(agent.pos)) agentsByNode.set(agent.pos, []);
+      agentsByNode.get(agent.pos).push(agent);
+    });
+
+  agentsByNode.forEach((agents, nodeId) => {
+    const node = cyRef.instance.getElementById(`n${nodeId}`);
+    if (!node || node.empty()) return;
+
+    const pos = node.renderedPosition();
+    const orbit = agents.length === 1 ? 23 : Math.min(34, 19 + agents.length * 2);
+
+    agents.forEach((agent, index) => {
+      const angle = agents.length === 1
+        ? -Math.PI / 2
+        : (Math.PI * 2 * index / agents.length) - Math.PI / 2;
+      const x = pos.x + Math.cos(angle) * orbit;
+      const y = pos.y + Math.sin(angle) * orbit;
+      const particle = document.createElement('div');
+      const kind = agent.byzantine
+        ? (agent.identified ? 'identified' : 'byz')
+        : 'good';
+      particle.className = [
+        'agent-particle',
+        kind,
+        simState.activeAgentId === agent.id ? 'active' : '',
+      ].filter(Boolean).join(' ');
+      particle.style.transform = `translate(${x}px, ${y}px)`;
+      particle.dataset.agentId = `A${agent.id}`;
+      layer.appendChild(particle);
+    });
   });
 }
 
@@ -476,6 +519,7 @@ export function resetSimulation() {
   logClear();
   $('edgeTable').innerHTML = '';
   $('agentList').innerHTML = '';
+  $('agentLayer').innerHTML = '';
   ['sRound','sAlive','sLost','sByzFound','sEdgeSafe','sEdgeDanger'].forEach(id => setStat(id, '-'));
   $('progressBar').style.width = '0%';
   $('runBtn').disabled  = true;

@@ -38,20 +38,22 @@ const STYLE = [
   {
     selector: 'node.blackhole',
     style: {
-      'background-color': '#1a0008',
-      'border-color': '#ff3d5a',
-      'border-width': 3,
+      'background-color': '#020305',
+      'border-color': '#ff8a00',
+      'border-width': 5,
       'color': '#ff3d5a',
       'label': '⬛',
       'font-size': 14,
+      'text-outline-color': '#020305',
+      'text-outline-width': 2,
     },
   },
   {
     selector: 'node.revealed',
     style: {
-      'background-color': '#2a0010',
-      'border-color': '#ff3d5a',
-      'border-width': 4,
+      'background-color': '#260008',
+      'border-color': '#ff8a00',
+      'border-width': 5,
       'color': '#ff3d5a',
       'label': '☠ BH',
       'font-size': 11,
