@@ -27,7 +27,7 @@ export function updateAgentChips() {
     if (!a.alive) classes.push('dead');
     else if (a.byzantine) classes.push('byz');
     else classes.push('good');
-    if (a.alive) classes.push('active');
+    if (a.alive && simState.activeAgentId === a.id) classes.push('active');
     chip.className = classes.join(' ');
     chip.textContent = `A${a.id}${a.byzantine ? ' ☿' : ''}${!a.alive ? ' ✕' : ` @${a.pos}`}`;
     list.appendChild(chip);
@@ -82,7 +82,7 @@ export function updateFormula() {
   } else {
     k = '(f+1)(∆+1)+3f+1';
     time = 'O(m·n + f)';
-    alg = 'BFS+CCP+MAP';
+    alg = 'DFS+CCP+MAP';
   }
 
   $('formulaBox').innerHTML = `

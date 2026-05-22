@@ -52,7 +52,7 @@ black hole is unambiguously identified at the end of the exploration.
 | Mode | Meaning |
 |---|---|
 | **Known Map** | Agents know the graph in advance — they only need to *locate* the BH. The DFS variant is used. |
-| **Unknown Map** | Agents must *explore* the graph from scratch (BFS-style), discovering edges as they go. |
+| **Unknown Map** | Agents must *explore* the graph from scratch, using DFS movement to discover and classify every edge. |
 
 ### Required team size and complexity
 
@@ -63,7 +63,7 @@ theoretical lower bound on the number of agents `k`:
 |---|---|---|---|
 | Known map | `2f + 2` | `O(n + f)` | `DFS + CCP` |
 | Unknown + Whiteboard | `(f+1)(Δ+1)` | `O(m + f)` | `DFS + CCP + WB` |
-| Unknown + Local | `(f+1)(Δ+1) + 3f + 1` | `O(m·n + f)` | `BFS + CCP + MAP` |
+| Unknown + Local | `(f+1)(Δ+1) + 3f + 1` | `O(m·n + f)` | `DFS + CCP + MAP` |
 
 Here `n` is the number of nodes, `m` the number of edges, `Δ` the max degree,
 and `f` the number of Byzantine agents. **CCP** = *Cautious Cyclic Probing*,
@@ -76,17 +76,17 @@ more than `f+1` honest agents.
 
 The simulator probes one edge per round using a simplified CCP model:
 
-1. A traversal order is precomputed from the homebase — **DFS** when the map is
-   known, **BFS** when it is not.
-2. Each round picks the next edge `(u, v)` from that order.
+1. A physical **DFS** walk is precomputed from the homebase, including
+   backtracking moves.
+2. Each round advances one agent by one step along the current DFS/CCP action.
 3. If `v` is the black hole, up to `f + 1` good agents are consumed (this is
    the worst case for cautious probing under `f` Byzantine faults) and the
    edge is flagged as *dangerous*.
 4. Otherwise the edge is *safe*, `v` is added to the explored set, and there
    is a chance that any active Byzantine agent gets *identified* by its
    inconsistent behaviour during the cross-check.
-5. The run finishes when the BH is located (known-map) or when the traversal
-   is exhausted (unknown-map). The mission fails if every honest agent is
+5. The run finishes when the BH is located (known-map) or when every edge has
+   been classified (unknown-map). The mission fails if every honest agent is
    consumed before that happens.
 
 > ⚠️ This is a **teaching / visualisation prototype**, not a verified

@@ -91,12 +91,15 @@ const STYLE = [
 
 export function initCy(nodes, edges) {
   if (cyRef.instance) cyRef.instance.destroy();
+  const hasPresetPositions = nodes.some(node => node.position);
 
   cyRef.instance = cytoscape({
     container: document.getElementById('cy'),
     elements: { nodes, edges },
     style: STYLE,
-    layout: { name: 'cose', padding: 40, nodeOverlap: 30, animate: false },
+    layout: hasPresetPositions
+      ? { name: 'preset', padding: 60, fit: true, animate: false }
+      : { name: 'cose', padding: 40, nodeOverlap: 30, animate: false },
   });
 
   cyRef.instance.on('mouseover', 'node', showTooltip);

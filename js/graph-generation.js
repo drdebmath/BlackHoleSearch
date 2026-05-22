@@ -34,6 +34,7 @@ export function generateGraph(topo, n) {
 
     case 'grid':
       buildGrid(n, addEdge, edges);
+      applyGridPositions(nodes, n);
       break;
 
     case 'tree':
@@ -70,6 +71,23 @@ function buildGrid(n, addEdge, edges) {
       });
   }
   for (let i = 1; i < n; i++) if (!visited.has(i)) addEdge(i - 1, i);
+}
+
+function applyGridPositions(nodes, n) {
+  const cols = Math.ceil(Math.sqrt(n));
+  const rows = Math.ceil(n / cols);
+  const spacing = 95;
+  const width = (cols - 1) * spacing;
+  const height = (rows - 1) * spacing;
+
+  nodes.forEach((node, i) => {
+    const row = Math.floor(i / cols);
+    const col = i % cols;
+    node.position = {
+      x: col * spacing - width / 2,
+      y: row * spacing - height / 2,
+    };
+  });
 }
 
 function buildRandomConnected(n, addEdge, edges) {
