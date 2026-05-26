@@ -156,3 +156,24 @@ document.querySelectorAll('.tab').forEach(tab => {
 
 updateFormula();
 buildGraph();
+// Catch standard runtime Javascript errors
+window.addEventListener('error', (ev) => {
+  try {
+    const msg = ev.error?.message || ev.message || String(ev);
+    console.error('Uncaught error:', msg);
+    showOverlay('failure', 'SYSTEM ERROR', msg);
+  } catch (e) {
+    console.error('Failed to show error overlay:', e);
+  }
+});
+
+// Catch unhandled promises (e.g., failed network requests or async errors)
+window.addEventListener('unhandledrejection', (ev) => {
+  try {
+    const msg = ev.reason?.message || String(ev.reason);
+    console.error('Unhandled promise rejection:', msg);
+    showOverlay('failure', 'UNHANDLED PROMISE', msg);
+  } catch (e) {
+    console.error('Failed to show error overlay:', e);
+  }
+});
