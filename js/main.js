@@ -130,33 +130,7 @@ runBtn.onclick = () => {
   }
 };
 
-// Global error handlers to surface runtime problems to the UI overlay
-window.addEventListener('error', (ev) => {
-  try {
-    const msg = ev && ev.message ? ev.message : String(ev.error || ev);
-    console.error('Uncaught error:', ev.error || ev.message || ev);
-    showOverlay('failure', 'UNCAUGHT ERROR', msg);
-  } catch (e) {
-    console.error(e);
-  }
-});
-window.addEventListener('unhandledrejection', (ev) => {
-  try {
-    console.error('Unhandled promise rejection:', ev.reason);
-    showOverlay('failure', 'UNHANDLED PROMISE REJECTION', ev.reason && ev.reason.message ? ev.reason.message : String(ev.reason));
-  } catch (e) {
-    console.error(e);
-  }
-});
-
-$('overlayCloseBtn').addEventListener('click', closeOverlay);
-document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
-});
-
-updateFormula();
-buildGraph();
-// Catch standard runtime Javascript errors
+// Global error handlers to surface runtime problems to the UI overlay box
 window.addEventListener('error', (ev) => {
   try {
     const msg = ev.error?.message || ev.message || String(ev);
@@ -167,7 +141,6 @@ window.addEventListener('error', (ev) => {
   }
 });
 
-// Catch unhandled promises (e.g., failed network requests or async errors)
 window.addEventListener('unhandledrejection', (ev) => {
   try {
     const msg = ev.reason?.message || String(ev.reason);
@@ -177,3 +150,11 @@ window.addEventListener('unhandledrejection', (ev) => {
     console.error('Failed to show error overlay:', e);
   }
 });
+
+$('overlayCloseBtn').addEventListener('click', closeOverlay);
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+});
+
+updateFormula();
+buildGraph();
