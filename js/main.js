@@ -1,13 +1,18 @@
 // Entry point: wires up DOM events and starts the simulator.
 
 import { cyRef, runRef } from './state.js';
-import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph } from './simulation.js';
+import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph, setAdversaryView, setBBHControlMode, setBBHControlValue, setBBHAgentThreshold, setBBHActive } from './simulation.js';
 import { $, updateFormula, closeOverlay, switchTab } from './ui.js';
 
 const nNodes  = $('nNodes');
 const fFault  = $('fFault');
 const runBtn  = $('runBtn');
 const panelToggle = $('panelToggle');
+const adversaryView = $('adversaryView');
+const bbhControlMode = $('bbhControlMode');
+const bbhManualActive = $('bbhManualActive');
+const bbhEveryN = $('bbhEveryN');
+const bbhAgentThreshold = $('bbhAgentThreshold');
 const panelStoreKey = 'bhs-panels-collapsed';
 const mobilePanelStoreKey = 'bhs-mobile-panels-collapsed';
 const mobilePanelQuery = window.matchMedia('(max-width: 900px)');
@@ -63,6 +68,32 @@ nNodes.oninput = () => { $('nVal').textContent = nNodes.value; updateFormula(); 
 fFault.oninput = () => { $('fVal').textContent = fFault.value; updateFormula(); };
 $('topoKnow').onchange = updateFormula;
 $('commModel').onchange = updateFormula;
+
+if (adversaryView) {
+  adversaryView.onchange = () => setAdversaryView(adversaryView.checked);
+}
+if (bbhControlMode) {
+  const updateModeRows = () => {
+    const mode = bbhControlMode.value;
+    document.getElementById('bbhManualRow').style.display = mode === 'manual' ? 'block' : 'none';
+    document.getElementById('bbhEveryRow').style.display = mode === 'every' ? 'block' : 'none';
+    document.getElementById('bbhAgentsRow').style.display = mode === 'agents' ? 'block' : 'none';
+  };
+  bbhControlMode.onchange = () => {
+    setBBHControlMode(bbhControlMode.value);
+    updateModeRows();
+  };
+  updateModeRows();
+}
+if (bbhManualActive) {
+  bbhManualActive.onchange = () => setBBHActive(bbhManualActive.checked);
+}
+if (bbhEveryN) {
+  bbhEveryN.oninput = () => setBBHControlValue(bbhEveryN.value);
+}
+if (bbhAgentThreshold) {
+  bbhAgentThreshold.oninput = () => setBBHAgentThreshold(bbhAgentThreshold.value);
+}
 
 $('buildBtn').onclick = buildGraph;
 $('resetBtn').onclick = resetSimulation;

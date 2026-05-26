@@ -52,6 +52,15 @@ const STYLE = [
     },
   },
   {
+    selector: 'node.true-blackhole',
+    style: {
+      'background-color': '#020305',
+      'border-color': '#ff8a00',
+      'border-width': 3,
+      'color': '#ff3d5a',
+    },
+  },
+  {
     selector: 'node.blackhole',
     style: {
       'background-color': '#020305',
@@ -62,6 +71,17 @@ const STYLE = [
       'font-size': 14,
       'text-outline-color': '#020305',
       'text-outline-width': 2,
+    },
+  },
+  {
+    selector: 'node.trap-sprung',
+    style: {
+      'border-color': '#ff3d5a',
+      'border-width': 6,
+      'background-color': '#3d0d12',
+      'box-shadow-blur': 18,
+      'box-shadow-color': '#ff3d5a',
+      'box-shadow-opacity': 0.8,
     },
   },
   {
@@ -132,7 +152,8 @@ function showTooltip(evt) {
   const pos = evt.renderedPosition;
   const agentsHere = simState.agents.filter(a => `n${a.pos}` === nid);
   const compLabel = node.hasClass('C1') ? 'C1' : node.hasClass('C2') ? 'C2' : '';
-  const here = node.hasClass('blackhole') || node.hasClass('revealed')
+  const isTrueBH = simState.adversaryView && node.hasClass('true-blackhole');
+  const here = (node.hasClass('revealed') || isTrueBH)
     ? '☠ BLACK HOLE'
     : node.hasClass('safe') ? '✓ SAFE' : 'Unexplored';
   const agentList = agentsHere.length > 0

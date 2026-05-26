@@ -23,7 +23,12 @@ export function buildGraph() {
   const comm = $('commModel').value;
   const know = $('topoKnow').value;
   const simMode = $('simMode') ? $('simMode').value : 'find-bbh';
-  const bbhAdversary = $('bbhAdversary') ? $('bbhAdversary').checked : false;
+  const bbhAdversary = $('bbhAdversary') ? $('bbhAdversary').checked : true;
+  const adversaryView = $('adversaryView') ? $('adversaryView').checked : false;
+  const bbhControlMode = $('bbhControlMode') ? $('bbhControlMode').value : 'manual';
+  const bbhActive = $('bbhManualActive') ? $('bbhManualActive').checked : false;
+  const bbhControlValue = $('bbhEveryN') ? +$('bbhEveryN').value : 5;
+  const bbhAgentThreshold = $('bbhAgentThreshold') ? +$('bbhAgentThreshold').value : 3;
 
   const { nodes, edges } = generateGraph(topo, n);
   initCy(nodes, edges);
@@ -63,9 +68,16 @@ export function buildGraph() {
   const marker = agents.slice().reverse().find(a => !a.byzantine);
   if (marker) {
     marker.role = 'Marker';
+    marker.roleType = 'Marker';
     marker.settled = true;
     marker.pos = homebase;
   }
+
+  agents.forEach(a => {
+    if (!a.byzantine && !a.roleType) {
+      a.roleType = a.role === 'L' ? 'Explorer' : 'Marker';
+    }
+  });
 
   const ports = {};
   for (let i = 0; i < n; i++) ports[i] = [...new Set(neighbors[i])].sort((a, b) => a - b);
@@ -95,12 +107,22 @@ export function buildGraph() {
     lostInBH: 0,
     mode: simMode,
     bbhAdversary,
+    bbhControlMode,
+    bbhControlValue,
+    bbhAgentThreshold,
+    bbhActive: bbhControlMode === 'manual' ? bbhActive : false,
+    adversaryView,
     bbhActivations: 0,
     anchorsPlaced: 0,
     unanchoredNeighbors: 0,
     currentPhase: 0,
     maxDistance: 1,
     component: 'C1',
+    roundsSurvived: 0,
+    safeCoverage: 0,
+    agentsLost: 0,
+    cycleVisited: new Set([homebase]),
+    perpTargetNodes: new Set(),
     pendingReturn: null,
     lastCautiousProbe: null,
     lastPhaseTraversalIndex: -1,
@@ -111,17 +133,14 @@ export function buildGraph() {
   setSimState(state);
 
   cy.getElementById('n' + homebase).addClass('homebase');
-  cy.getElementById('n' + bhNode).addClass('blackhole');
+  const bhNodeElement = cy.getElementById('n' + bhNode);
+  bhNodeElement.addClass('true-blackhole');
+  if (adversaryView) bhNodeElement.addClass('blackhole');
 
   updateAgentChips();
   updateEdgeTable();
   renderAgentsOnGraph();
-  setStat('sRound', 0);
-  setStat('sAlive', agents.filter(a => a.alive).length);
-  setStat('sLost', 0);
-  setStat('sByzFound', 0);
-  setStat('sEdgeSafe', 0);
-  setStat('sEdgeDanger', 0);
+  refreshDisplay();
   $('progressBar').style.width = '0%';
 
   logClear();
@@ -234,6 +253,7 @@ export function stepSimulation() {
   if (!simState || simState.done) return;
 
   const s = simState;
+  updateBBHSchedule(s, s.round + 1);
   // Phase increment: when returning to home with no pending operation AND traversal has progressed
   if (s.currentNode === s.homebase && !s.currentOperation && s.traversalIndex > s.lastPhaseTraversalIndex) {
     s.currentPhase = (s.currentPhase || 0) + 1;
@@ -247,9 +267,8 @@ export function stepSimulation() {
     s.pendingReturn.handled = true;
   }
   if (!s.currentOperation) {
-    if (shouldFinish(s)) {
-      finishSim(finishWasSuccessful(s));
-      return;
+    if (s.traversalIndex >= s.traversalOrder.length) {
+      s.traversalIndex = 0;
     }
     s.currentOperation = prepareOperation(s, s.traversalOrder[s.traversalIndex]);
   }
@@ -262,6 +281,7 @@ export function stepSimulation() {
     return;
   }
   s.round++;
+  s.roundsSurvived = s.round;
   s.activeAgentId = action.agentId ?? null;
   setStat('sRound', s.round);
   const actFrom = action.from ?? op.step.from;
@@ -310,9 +330,6 @@ export function stepSimulation() {
     return;
   }
 
-  if (!s.currentOperation && shouldFinish(s)) {
-    finishSim(finishWasSuccessful(s));
-  }
 }
 
 function handleEnterBH(agentId, from, to) {
@@ -345,14 +362,16 @@ function startCautiousProbing(from, to) {
 }
 
 function bbhShouldActivate(s, from, to, agentId) {
-  // If adversary mode is off, always activate (legacy behavior).
   if (!s.bbhAdversary) return true;
-  // Adversary chooses per visit. Simple heuristic: prefer to wait until at least
-  // one good agent has visited safely, then activate randomly. We implement
-  // a randomized adversary with slight bias toward delaying activation.
-  const rand = Math.random();
-  const threshold = 0.35; // lower -> more likely to delay
-  const willActivate = rand > threshold;
+  if (s.bbhControlMode === 'manual') {
+    if (s.bbhActive) s.bbhActivations++;
+    return s.bbhActive;
+  }
+  if (s.bbhControlMode === 'every' || s.bbhControlMode === 'agents') {
+    if (s.bbhActive) s.bbhActivations++;
+    return s.bbhActive;
+  }
+  const willActivate = Math.random() > 0.35;
   if (willActivate) s.bbhActivations++;
   return willActivate;
 }
@@ -361,19 +380,12 @@ function discoverAgentOnBH(agentId, from, to) {
   const s = simState;
   const agent = s.agents.find(a => a.id === agentId);
   if (!agent) return;
-  // Agent survives and stands on the BBH node, learning its location.
   agent.pos = to;
   agent.alive = true;
   agent.status = 'alive';
-  s.bhLocated = true;
-  s.found = true;
   s.currentNode = to;
-  cyRef.instance.getElementById(`n${to}`).removeClass('blackhole').addClass('revealed');
-  // mark agent as anchored to indicate it discovered the BBH safely
-  agent.role = agent.role || 'Anchor';
-  agent.settled = true;
-  s.anchorsPlaced = (s.anchorsPlaced || 0) + 1;
-  logAdd(s.round, 'safe', `A${agent.id} visited ${from}->${to} and discovered the BBH without activation.`);
+  s.visitedNodes.add(to);
+  logAdd(s.round, 'info', `A${agent.id} entered BH node ${to} while the BBH remained dormant.`);
 }
 
 function prepareOperation(s, step) {
@@ -459,8 +471,10 @@ function prepareOperation(s, step) {
             // return
             actions.push({ type: 'move', agentId: exp.id, from: step.to, to: step.from });
           });
-          // after explorers return mark edge safe
-          actions.push({ type: 'markEdgeSafe', from: step.from, to: step.to });
+          if (step.to !== s.bhNode) {
+            // after explorers return mark edge safe only if the target is not the hidden BH
+            actions.push({ type: 'markEdgeSafe', from: step.from, to: step.to });
+          }
         } else {
           movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
         }
@@ -508,6 +522,15 @@ function loseAgentToBlackHole(agentId, from, to) {
   s.currentNode = from;
   markCurrentNode(from);
   logAdd(s.round, 'danger', `A${agent.id} enters ${from}->${to} and is lost in the black hole (${s.lostInBH}/${s.f + 1}).`);
+  const bhNode = cyRef.instance.getElementById(`n${to}`);
+  bhNode.addClass('trap-sprung');
+  window.setTimeout(() => bhNode.removeClass('trap-sprung'), 900);
+  if (s.lostInBH >= s.f + 1) {
+    s.bhLocated = true;
+    s.found = true;
+    cyRef.instance.getElementById(`n${to}`).removeClass('blackhole').addClass('revealed');
+    logAdd(s.round, 'danger', `BH location confirmed after ${s.lostInBH} losses on node ${to}.`);
+  }
 }
 
 function completeOperation(op) {
@@ -520,15 +543,21 @@ function completeOperation(op) {
   cyEdge.removeClass('probing');
 
   if (dangerous) {
-    s.edgeStatus[key] = 'dangerous';
-    s.found = true;
-    s.bhLocated = true;
+    // Only reveal the BH and mark the dangerous edge once the adversary has
+    // actually activated and enough losses or a confirmed discovery occurred.
+    if (s.bhLocated) {
+      s.edgeStatus[key] = 'dangerous';
+      s.found = true;
+      s.currentNode = from;
+      cyEdge.addClass('dangerous');
+      cyRef.instance.getElementById(`n${to}`).removeClass('blackhole').addClass('revealed');
+      logAdd(s.round, 'danger', `CCP on edge (${from}->${to}): BLACK HOLE DETECTED. Total BH losses: ${s.lostInBH} (target f+1=${s.f + 1}).`);
+      computeComponentsAfterBH(s, s.bhNode);
+      return;
+    }
+    // If the BBH remained dormant, no discovery occurs yet.
     s.currentNode = from;
-    cyEdge.addClass('dangerous');
-    cyRef.instance.getElementById(`n${to}`).removeClass('blackhole').addClass('revealed');
-    logAdd(s.round, 'danger', `CCP on edge (${from}->${to}): BLACK HOLE DETECTED. Total BH losses: ${s.lostInBH} (target f+1=${s.f + 1}).`);
-    // Compute components excluding the BH node and label them C1 (home) and C2 (other)
-    computeComponentsAfterBH(s, s.bhNode);
+    logAdd(s.round, 'info', `Edge (${from}->${to}) remains unclassified after a dormant BH encounter.`);
     return;
   }
 
@@ -633,11 +662,7 @@ function computeComponentsAfterBH(s, bhNode) {
 }
 
 function shouldFinish(s) {
-  if (s.currentOperation) return false;
-  // Perpetual exploration modes do not finish normally; success is handled separately
-  if (s.mode && s.mode.startsWith('perp')) return false;
-  if (s.know === 'unknown') return allEdgesClassified(s) || s.traversalIndex >= s.traversalOrder.length;
-  return s.traversalIndex >= s.traversalOrder.length || s.bhLocated;
+  return false;
 }
 
 function finishWasSuccessful(s) {
@@ -653,17 +678,22 @@ function refreshDisplay() {
   const s = simState;
   const edgeSafe   = Object.values(s.edgeStatus).filter(v => v === 'safe').length;
   const edgeDanger = Object.values(s.edgeStatus).filter(v => v === 'dangerous').length;
+  const aliveAgents = s.agents.filter(a => a.alive).length;
   setStat('sEdgeSafe', edgeSafe);
   setStat('sEdgeDanger', edgeDanger);
-  setStat('sAlive', s.agents.filter(a => a.alive).length);
-  setStat('sLost', s.lostInBH);
+  setStat('sAlive', aliveAgents);
+  setStat('sAgentsLost', s.lostInBH);
+  setStat('sRoundsSurvived', s.roundsSurvived ?? s.round);
+  const coveragePercent = s.n ? Math.round(s.safeNodes.size / s.n * 100) : 0;
+  setStat('sSafeCoverage', `${coveragePercent}%`);
+  setStat('sSafeNodes', s.safeNodes.size);
+  setStat('sAdvMode', s.bbhControlMode);
+  setStat('sBBHState', s.bbhActive ? 'active' : 'inactive');
+  setStat('sAlive', aliveAgents);
   setStat('sByzFound', s.identifiedByzantine.size);
   setStat('sPhase', s.currentPhase ?? 0);
   setStat('sMaxDist', s.maxDistance ?? 1);
   setStat('sComponent', s.component ?? 'C1');
-  setStat('sBBHActivations', s.bbhActivations ?? 0);
-  setStat('sAnchors', s.anchorsPlaced ?? 0);
-  setStat('sUnanchored', s.unanchoredNeighbors ?? 0);
   $('progressBar').style.width = progressPercent(s) + '%';
   updateAgentChips();
   updateEdgeTable();
@@ -726,6 +756,50 @@ function markCurrentNode(nodeId) {
   cy.getElementById(`n${nodeId}`).addClass('current');
 }
 
+function updateBBHSchedule(s, nextRound) {
+  if (!s.bbhAdversary) return;
+  if (s.bbhControlMode === 'every') {
+    s.bbhActive = s.bbhControlValue > 0 && nextRound % s.bbhControlValue === 0;
+  } else if (s.bbhControlMode === 'agents') {
+    const agentsOnBH = s.agents.filter(a => a.alive && !a.byzantine && a.pos === s.bhNode).length;
+    s.bbhActive = agentsOnBH >= s.bbhAgentThreshold;
+  }
+}
+
+export function setAdversaryView(visible) {
+  const s = simState;
+  if (!s) return;
+  s.adversaryView = visible;
+  const bhNode = cyRef.instance.getElementById(`n${s.bhNode}`);
+  if (visible) bhNode.addClass('blackhole');
+  else bhNode.removeClass('blackhole');
+}
+
+export function setBBHControlMode(mode) {
+  const s = simState;
+  if (!s) return;
+  s.bbhControlMode = mode;
+  if (mode !== 'manual') s.bbhActive = false;
+}
+
+export function setBBHControlValue(value) {
+  const s = simState;
+  if (!s) return;
+  s.bbhControlValue = Number(value);
+}
+
+export function setBBHAgentThreshold(value) {
+  const s = simState;
+  if (!s) return;
+  s.bbhAgentThreshold = Number(value);
+}
+
+export function setBBHActive(active) {
+  const s = simState;
+  if (!s) return;
+  s.bbhActive = Boolean(active);
+}
+
 function getCyEdge(from, to) {
   return cyRef.instance.edges().filter(e =>
     (e.data('source') === `n${from}` && e.data('target') === `n${to}`) ||
@@ -780,17 +854,19 @@ export function renderAgentsOnGraph() {
       const kind = agent.byzantine
         ? (agent.identified ? 'identified' : 'byz')
         : 'good';
+      const roleType = agent.roleType || (agent.role === 'L' ? 'Explorer' : 'Marker');
       particle.className = [
         'agent-particle',
         kind,
+        roleType === 'Explorer' ? 'explorer' : 'marker',
         simState.activeAgentId === agent.id ? 'active' : '',
       ].filter(Boolean).join(' ');
       particle.style.transform = `translate(${x}px, ${y}px)`;
       particle.dataset.agentId = `A${agent.id}`;
-      // Show role label and anchor state on the particle
+      // Show explorer or marker label and anchor state on the particle
       const roleSpan = document.createElement('span');
       roleSpan.className = 'agent-role';
-      roleSpan.textContent = agent.role ? agent.role : '';
+      roleSpan.textContent = roleType === 'Explorer' ? 'E' : 'M';
       if (agent.settled) particle.classList.add('anchored');
       particle.appendChild(roleSpan);
       layer.appendChild(particle);
@@ -810,7 +886,7 @@ export function resetSimulation() {
   $('edgeTable').innerHTML = '';
   $('agentList').innerHTML = '';
   $('agentLayer').innerHTML = '';
-  ['sRound','sAlive','sLost','sByzFound','sEdgeSafe','sEdgeDanger'].forEach(id => setStat(id, '-'));
+  ['sRound','sAlive','sAgentsLost','sRoundsSurvived','sSafeCoverage','sSafeNodes','sAdvMode','sBBHState','sByzFound','sEdgeSafe','sEdgeDanger','sPhase','sMaxDist','sComponent'].forEach(id => setStat(id, '-'));
   $('progressBar').style.width = '0%';
   $('runBtn').disabled  = true;
   $('runBtn').textContent = 'RUN SIMULATION';

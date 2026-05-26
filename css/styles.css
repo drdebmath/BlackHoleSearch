@@ -258,6 +258,18 @@ select:focus { border-color: var(--accent); }
 }
 .btn-primary { border-color: var(--accent); color: var(--accent); }
 .btn-primary:hover { background: rgba(0, 229, 255, 0.1); box-shadow: var(--glow); }
+.bbh-schedule-row {
+  display: flex;
+  flex-direction: column;
+}
+.agent-chip.explorer { border-color: #00e676; }
+.agent-chip.marker { border-color: #ffb700; }
+.node-trap-flash { animation: trapFlash 0.6s ease-out; }
+@keyframes trapFlash {
+  0% { box-shadow: 0 0 0px #ff3d5a; }
+  50% { box-shadow: 0 0 18px #ff3d5a; }
+  100% { box-shadow: 0 0 0px #ff3d5a; }
+}
 .btn-danger  { border-color: var(--danger); color: var(--danger); }
 .btn-danger:hover  { background: rgba(255, 61, 90, 0.1); }
 .btn-warn    { border-color: var(--warn);   color: var(--warn); }
@@ -463,8 +475,8 @@ body.panels-collapsed .right-panel {
 .agent-particle.good { color: var(--agent-good); }
 .agent-particle.byz { color: var(--agent-byz); }
 .agent-particle.identified { color: var(--agent-identified); }
-.agent-particle.active {
-  width: 17px;
+.agent-particle.explorer { box-shadow: 0 0 16px #00e676; }
+.agent-particle.marker { box-shadow: 0 0 12px #ffb700; }
   height: 17px;
   margin: -8.5px 0 0 -8.5px;
   border-color: var(--text);

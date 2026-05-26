@@ -94,6 +94,32 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
 
       <div class="sep"></div>
 
+      <div class="section-title">// ADVERSARY CONTROL</div>
+      <label>
+        <input type="checkbox" id="adversaryView"> Adversary View
+      </label>
+      <label>
+        BBH CONTROL MODE
+        <select id="bbhControlMode">
+          <option value="manual">Manual</option>
+          <option value="every">Every N rounds</option>
+          <option value="agents">When ≥ M agents on BH</option>
+        </select>
+      </label>
+      <label id="bbhManualRow">
+        <input type="checkbox" id="bbhManualActive"> BBH active now
+      </label>
+      <label id="bbhEveryRow" class="bbh-schedule-row" style="display:none;">
+        EVERY N ROUNDS
+        <input type="number" id="bbhEveryN" min="2" value="5">
+      </label>
+      <label id="bbhAgentsRow" class="bbh-schedule-row" style="display:none;">
+        AGENT THRESHOLD
+        <input type="number" id="bbhAgentThreshold" min="1" value="3">
+      </label>
+
+      <div class="sep"></div>
+
       <label>
         SIMULATION SPEED
         <select id="speedSel">
@@ -148,44 +174,28 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         <div class="stat-val sv-green" id="sAlive">—</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-label">LOST IN BH</div>
-        <div class="stat-val sv-red" id="sLost">0</div>
+        <div class="stat-label">AGENTS LOST</div>
+        <div class="stat-val sv-red" id="sAgentsLost">0</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-label">BYZ FOUND</div>
-        <div class="stat-val sv-purple" id="sByzFound">0</div>
+        <div class="stat-label">ROUNDS SURVIVED</div>
+        <div class="stat-val sv-purple" id="sRoundsSurvived">0</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-label">EDGES SAFE</div>
-        <div class="stat-val sv-green" id="sEdgeSafe">0</div>
+        <div class="stat-label">SAFE COVERAGE</div>
+        <div class="stat-val sv-green" id="sSafeCoverage">0%</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-label">EDGES DANGER</div>
-        <div class="stat-val sv-red" id="sEdgeDanger">0</div>
+        <div class="stat-label">SAFE NODES</div>
+        <div class="stat-val sv-cyan" id="sSafeNodes">0</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-label">PHASE</div>
-        <div class="stat-val sv-cyan" id="sPhase">0</div>
+        <div class="stat-label">ADVERSARY MODE</div>
+        <div class="stat-val sv-red" id="sAdvMode">manual</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-label">MAX DISTANCE</div>
-        <div class="stat-val sv-green" id="sMaxDist">1</div>
-      </div>
-      <div class="stat-cell">
-        <div class="stat-label">COMPONENT</div>
-        <div class="stat-val sv-purple" id="sComponent">C1</div>
-      </div>
-      <div class="stat-cell">
-        <div class="stat-label">BBH ACTIVATIONS</div>
-        <div class="stat-val sv-red" id="sBBHActivations">0</div>
-      </div>
-      <div class="stat-cell">
-        <div class="stat-label">ANCHORS PLACED</div>
-        <div class="stat-val sv-green" id="sAnchors">0</div>
-      </div>
-      <div class="stat-cell">
-        <div class="stat-label">UNANCHORED NEIGHBORS |U|</div>
-        <div class="stat-val sv-cyan" id="sUnanchored">0</div>
+        <div class="stat-label">BBH STATE</div>
+        <div class="stat-val sv-orange" id="sBBHState">inactive</div>
       </div>
     </div>
 

@@ -28,11 +28,14 @@ export function updateAgentChips() {
     else if (a.byzantine && a.identified) classes.push('identified');
     else if (a.byzantine) classes.push('byz');
     else classes.push('good');
+    const roleType = a.roleType || (a.role === 'L' ? 'Explorer' : 'Marker');
+    classes.push(roleType === 'Explorer' ? 'explorer' : 'marker');
     if (a.alive && simState.activeAgentId === a.id) classes.push('active');
     chip.className = classes.join(' ');
     const role = a.role ? ` ${a.role}` : '';
+    const typeLabel = roleType === 'Explorer' ? 'E' : 'M';
     const anchor = a.settled ? ' ⚓' : '';
-    chip.textContent = `A${a.id}${a.byzantine ? ' ☿' : ''}${role}${anchor}${!a.alive ? ' ✕' : ` @${a.pos}`}`;
+    chip.textContent = `A${a.id}${a.byzantine ? ' ☿' : ''} ${typeLabel}${role}${anchor}${!a.alive ? ' ✕' : ` @${a.pos}`}`;
     list.appendChild(chip);
   });
 }
