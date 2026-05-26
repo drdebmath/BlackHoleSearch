@@ -4,7 +4,12 @@ import { simState } from './state.js';
 
 export const $ = id => document.getElementById(id);
 
-export function setStat(id, val) { $(id).textContent = val; }
+export function setStat(id, val) { 
+  const el = $(id);
+  if (el) {
+    el.textContent = val; 
+  }
+}
 
 export function logAdd(round, type, msg) {
   const log = $('log');
