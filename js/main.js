@@ -2,7 +2,7 @@
 
 import { cyRef, runRef } from './state.js';
 import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph, setAdversaryView, setBBHControlMode, setBBHControlValue, setBBHAgentThreshold, setBBHActive } from './simulation.js';
-import { $, updateFormula, closeOverlay, switchTab } from './ui.js';
+import { $, updateFormula, closeOverlay, switchTab, showOverlay } from './ui.js';
 
 const nNodes  = $('nNodes');
 const fFault  = $('fFault');
@@ -97,7 +97,19 @@ if (bbhAgentThreshold) {
 
 $('buildBtn').onclick = buildGraph;
 $('resetBtn').onclick = resetSimulation;
-$('stepBtn').onclick  = stepSimulation;
+
+function safeStep() {
+  try {
+    stepSimulation();
+  } catch (err) {
+    if (runRef.intervalId) { clearInterval(runRef.intervalId); runRef.intervalId = null; }
+    runBtn.textContent = '▶ RUN SIMULATION';
+    console.error(err);
+    showOverlay('failure', 'RUNTIME ERROR', err && err.message ? err.message : String(err));
+  }
+}
+
+$('stepBtn').onclick = safeStep;
 
 runBtn.onclick = () => {
   if (runRef.intervalId) {
@@ -110,10 +122,29 @@ runBtn.onclick = () => {
       buildGraph();
     }
     const speed = +$('speedSel').value;
-    runRef.intervalId = setInterval(stepSimulation, speed);
+    runRef.intervalId = setInterval(safeStep, speed);
     runBtn.textContent = '⏸ PAUSE';
   }
 };
+
+// Global error handlers to surface runtime problems to the UI overlay
+window.addEventListener('error', (ev) => {
+  try {
+    const msg = ev && ev.message ? ev.message : String(ev.error || ev);
+    console.error('Uncaught error:', ev.error || ev.message || ev);
+    showOverlay('failure', 'UNCAUGHT ERROR', msg);
+  } catch (e) {
+    console.error(e);
+  }
+});
+window.addEventListener('unhandledrejection', (ev) => {
+  try {
+    console.error('Unhandled promise rejection:', ev.reason);
+    showOverlay('failure', 'UNHANDLED PROMISE REJECTION', ev.reason && ev.reason.message ? ev.reason.message : String(ev.reason));
+  } catch (e) {
+    console.error(e);
+  }
+});
 
 $('overlayCloseBtn').addEventListener('click', closeOverlay);
 document.querySelectorAll('.tab').forEach(tab => {
