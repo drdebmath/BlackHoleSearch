@@ -477,6 +477,8 @@ body.panels-collapsed .right-panel {
 .agent-particle.identified { color: var(--agent-identified); }
 .agent-particle.explorer { box-shadow: 0 0 16px #00e676; }
 .agent-particle.marker { box-shadow: 0 0 12px #ffb700; }
+
+.agent-particle.anchored {
   height: 17px;
   margin: -8.5px 0 0 -8.5px;
   border-color: var(--text);
