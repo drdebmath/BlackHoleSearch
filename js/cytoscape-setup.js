@@ -27,6 +27,22 @@ const STYLE = [
     },
   },
   {
+    selector: 'node.C1',
+    style: {
+      'box-shadow-blur': 8,
+      'box-shadow-color': '#00e5ff',
+      'box-shadow-opacity': 0.12,
+    },
+  },
+  {
+    selector: 'node.C2',
+    style: {
+      'box-shadow-blur': 8,
+      'box-shadow-color': '#ff8a00',
+      'box-shadow-opacity': 0.12,
+    },
+  },
+  {
     selector: 'node.safe',
     style: {
       'background-color': '#001a0d',
@@ -115,13 +131,14 @@ function showTooltip(evt) {
   const tip = document.getElementById('tooltip');
   const pos = evt.renderedPosition;
   const agentsHere = simState.agents.filter(a => `n${a.pos}` === nid);
+  const compLabel = node.hasClass('C1') ? 'C1' : node.hasClass('C2') ? 'C2' : '';
   const here = node.hasClass('blackhole') || node.hasClass('revealed')
     ? '☠ BLACK HOLE'
     : node.hasClass('safe') ? '✓ SAFE' : 'Unexplored';
   const agentList = agentsHere.length > 0
     ? agentsHere.map(a => `A${a.id}${a.byzantine ? ' [BYZ]' : ''}`).join(', ')
     : 'none';
-  tip.innerHTML = `<b>${nid}</b><br>Agents: ${agentList}<br>${here}`;
+  tip.innerHTML = `<b>${nid}</b> ${compLabel}<br>Agents: ${agentList}<br>${here}`;
   tip.style.left = (pos.x + 16) + 'px';
   tip.style.top  = (pos.y - 20) + 'px';
   tip.style.display = 'block';

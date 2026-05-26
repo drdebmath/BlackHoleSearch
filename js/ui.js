@@ -30,7 +30,9 @@ export function updateAgentChips() {
     else classes.push('good');
     if (a.alive && simState.activeAgentId === a.id) classes.push('active');
     chip.className = classes.join(' ');
-    chip.textContent = `A${a.id}${a.byzantine ? ' ☿' : ''}${!a.alive ? ' ✕' : ` @${a.pos}`}`;
+    const role = a.role ? ` ${a.role}` : '';
+    const anchor = a.settled ? ' ⚓' : '';
+    chip.textContent = `A${a.id}${a.byzantine ? ' ☿' : ''}${role}${anchor}${!a.alive ? ' ✕' : ` @${a.pos}`}`;
     list.appendChild(chip);
   });
 }

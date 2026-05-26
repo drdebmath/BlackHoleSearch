@@ -22,6 +22,8 @@ export function buildGraph() {
   const f    = +$('fFault').value;
   const comm = $('commModel').value;
   const know = $('topoKnow').value;
+  const simMode = $('simMode') ? $('simMode').value : 'find-bbh';
+  const bbhAdversary = $('bbhAdversary') ? $('bbhAdversary').checked : false;
 
   const { nodes, edges } = generateGraph(topo, n);
   initCy(nodes, edges);
@@ -46,6 +48,23 @@ export function buildGraph() {
       identified: false,
       status: i < f ? 'byz' : 'good',
     });
+  }
+
+  // Assign roles to the first few good agents required by the path algorithm.
+  const roles = ['L', 'I1', 'I2', 'F', 'F1', 'F2'];
+  let goodIdx = 0;
+  for (const a of agents) {
+    if (!a.byzantine) {
+      if (goodIdx < roles.length) a.role = roles[goodIdx++];
+      else a.role = a.role || null;
+    }
+  }
+  // Reserve one agent as the permanent Marker at home if available
+  const marker = agents.slice().reverse().find(a => !a.byzantine);
+  if (marker) {
+    marker.role = 'Marker';
+    marker.settled = true;
+    marker.pos = homebase;
   }
 
   const ports = {};
@@ -74,6 +93,17 @@ export function buildGraph() {
     activeAgentId: null,
     identifiedByzantine: new Set(),
     lostInBH: 0,
+    mode: simMode,
+    bbhAdversary,
+    bbhActivations: 0,
+    anchorsPlaced: 0,
+    unanchoredNeighbors: 0,
+    currentPhase: 0,
+    maxDistance: 1,
+    component: 'C1',
+    pendingReturn: null,
+    lastCautiousProbe: null,
+    lastPhaseRound: -1,
   };
   state.traversalOrder = know === 'known'
     ? buildKnownDFSPlan(state)
@@ -204,6 +234,18 @@ export function stepSimulation() {
   if (!simState || simState.done) return;
 
   const s = simState;
+  // Phase increment: when returning to home with no pending operation, increment phase
+  if (s.currentNode === s.homebase && !s.currentOperation && s.round !== s.lastPhaseRound) {
+    s.currentPhase = (s.currentPhase || 0) + 1;
+    s.maxDistance = Math.pow(2, s.currentPhase);
+    s.lastPhaseRound = s.round;
+    logAdd(s.round, 'info', `Phase ${s.currentPhase} start — Max Distance ${s.maxDistance}.`);
+  }
+  // Check for expired expected returns and trigger cautious probing if needed.
+  if (s.pendingReturn && !s.pendingReturn.handled && s.round > s.pendingReturn.expiryRound) {
+    startCautiousProbing(s.pendingReturn.from, s.pendingReturn.to);
+    s.pendingReturn.handled = true;
+  }
   if (!s.currentOperation) {
     if (shouldFinish(s)) {
       finishSim(finishWasSuccessful(s));
@@ -222,12 +264,29 @@ export function stepSimulation() {
   s.round++;
   s.activeAgentId = action.agentId ?? null;
   setStat('sRound', s.round);
-  highlightEdge(op.step.from, op.step.to);
+  const actFrom = action.from ?? op.step.from;
+  const actTo   = action.to   ?? op.step.to;
+  highlightEdge(actFrom, actTo);
 
   if (action.type === 'move') {
-    moveAgent(action.agentId, op.step.from, op.step.to);
-  } else if (action.type === 'lose') {
-    loseAgentToBlackHole(action.agentId, op.step.from, op.step.to);
+    moveAgent(action.agentId, actFrom, actTo);
+  } else if (action.type === 'enterBH') {
+    handleEnterBH(action.agentId, actFrom, actTo);
+  } else if (action.type === 'bulkMove') {
+    // Move all agents in one round
+    action.agentIds.forEach(id => moveAgent(id, actFrom, actTo));
+  } else if (action.type === 'markEdgeSafe') {
+    // Mark edge safe after explorers returned
+    const k = edgeKey(action.from, action.to);
+    if (s.edgeStatus[k] === 'unknown') {
+      s.edgeStatus[k] = 'safe';
+      cyRef.instance.getElementById(`n${action.to}`).addClass('safe');
+      cyRef.instance.getElementById(`n${action.from}`).addClass('safe');
+      getCyEdge(action.from, action.to).addClass('safe');
+      s.safeNodes.add(action.from);
+      s.safeNodes.add(action.to);
+      logAdd(s.round, 'safe', `Explore procedure certified edge (${action.from}->${action.to}) SAFE.`);
+    }
   } else if (action.type === 'markDanger') {
     logAdd(s.round, 'danger', `Edge (${op.step.from}->${op.step.to}) borders the known black hole; marked DANGEROUS without another loss.`);
   } else if (action.type === 'markMoveOnly') {
@@ -256,6 +315,67 @@ export function stepSimulation() {
   }
 }
 
+function handleEnterBH(agentId, from, to) {
+  const s = simState;
+  // Decide whether BBH activates this visit.
+  if (bbhShouldActivate(s, from, to, agentId)) {
+    loseAgentToBlackHole(agentId, from, to);
+  } else {
+    discoverAgentOnBH(agentId, from, to);
+  }
+}
+
+function startCautiousProbing(from, to) {
+  const s = simState;
+  const f1 = s.agents.find(a => a.role === 'F1' && a.alive && a.pos === from);
+  const f2 = s.agents.find(a => a.role === 'F2' && a.alive && a.pos === from);
+  if (!f1 || !f2) return;
+  // Build a cautious probe operation: F1 steps to `to` and returns (or dies).
+  const actions = [];
+  if (to === s.bhNode && !s.bhLocated) actions.push({ type: 'enterBH', agentId: f1.id, from, to });
+  else actions.push({ type: 'move', agentId: f1.id, from, to });
+  // schedule return if F1 did not die and not settled on BH
+  actions.push({ type: 'move', agentId: f1.id, from: to, to: from });
+
+  s.currentOperation = { step: { from, to, label: 'CAUTIOUS PROBE' }, actions, index: 0, cautiousProbe: true };
+  s.lastCautiousProbe = { f1Id: f1.id, f2Id: f2.id, from, to };
+  // clear pendingReturn record
+  s.pendingReturn = null;
+  logAdd(s.round, 'warn', `Cautious probing started by F1/A${f1.id} (with F2/A${f2.id} waiting).`);
+}
+
+function bbhShouldActivate(s, from, to, agentId) {
+  // If adversary mode is off, always activate (legacy behavior).
+  if (!s.bbhAdversary) return true;
+  // Adversary chooses per visit. Simple heuristic: prefer to wait until at least
+  // one good agent has visited safely, then activate randomly. We implement
+  // a randomized adversary with slight bias toward delaying activation.
+  const rand = Math.random();
+  const threshold = 0.35; // lower -> more likely to delay
+  const willActivate = rand > threshold;
+  if (willActivate) s.bbhActivations++;
+  return willActivate;
+}
+
+function discoverAgentOnBH(agentId, from, to) {
+  const s = simState;
+  const agent = s.agents.find(a => a.id === agentId);
+  if (!agent) return;
+  // Agent survives and stands on the BBH node, learning its location.
+  agent.pos = to;
+  agent.alive = true;
+  agent.status = 'alive';
+  s.bhLocated = true;
+  s.found = true;
+  s.currentNode = to;
+  cyRef.instance.getElementById(`n${to}`).removeClass('blackhole').addClass('revealed');
+  // mark agent as anchored to indicate it discovered the BBH safely
+  agent.role = agent.role || 'Anchor';
+  agent.settled = true;
+  s.anchorsPlaced = (s.anchorsPlaced || 0) + 1;
+  logAdd(s.round, 'safe', `A${agent.id} visited ${from}->${to} and discovered the BBH without activation.`);
+}
+
 function prepareOperation(s, step) {
   if (!step) {
     return { step: { from: s.currentNode, to: s.currentNode }, actions: [{ type: 'noop' }], index: 0 };
@@ -267,9 +387,9 @@ function prepareOperation(s, step) {
   if (dangerous) {
     if (!s.bhLocated) {
       const probes = s.agents
-        .filter(a => a.alive && !a.byzantine && a.pos === step.from)
+        .filter(a => a.alive && !a.byzantine && a.pos === step.from && a.role !== 'Marker')
         .slice(0, s.f + 1);
-      probes.forEach(agent => actions.push({ type: 'lose', agentId: agent.id }));
+      probes.forEach(agent => actions.push({ type: 'enterBH', agentId: agent.id }));
       if (probes.length < s.f + 1) {
         logAdd(s.round, 'warn', `Only ${probes.length} good agent(s) available for the required f+1=${s.f + 1} CCP loss threshold.`);
       }
@@ -277,8 +397,77 @@ function prepareOperation(s, step) {
       actions.push({ type: 'markDanger' });
     }
   } else {
-    const movers = s.agents.filter(a => a.alive && a.pos === step.from);
-    movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
+    const movers = s.agents.filter(a => a.alive && a.pos === step.from && a.role !== 'Marker');
+    const key = edgeKey(step.from, step.to);
+    // If edge already confirmed safe, allow fast bulk movement
+    if (s.edgeStatus[key] === 'safe' && movers.length > 0) {
+      actions.push({ type: 'bulkMove', agentIds: movers.map(a => a.id), from: step.from, to: step.to });
+      return { step, actions, index: 0 };
+    }
+
+    // If the key path roles are present, perform Make_Pattern (2 rounds)
+    // followed by a 5-round Translate_Pattern sub-phase choreography.
+    const roleMap = {};
+    movers.forEach(a => { if (a.role) roleMap[a.role] = a; });
+    if (roleMap.L && roleMap.I1 && roleMap.I2 && roleMap.F) {
+      const L = roleMap.L.id, I1 = roleMap.I1.id, I2 = roleMap.I2.id, F = roleMap.F.id;
+      // Make_Pattern: round1 L+I1+I2 move forward (from->to), round2 I2 returns to F (to->from)
+      // Translate_Pattern (5 rounds):
+      // 1: L probes forward (from->to)
+      // 2: I2 moves from->to (meet L)
+      // 3: I2 returns to from (to->from) to relay
+      // 4: F and I2 advance together from->to
+      // 5: I1 moves from->to (catch up)
+      const seq = [];
+      // Make pattern round1
+      seq.push({ type: 'move', agentId: L, from: step.from, to: step.to });
+      seq.push({ type: 'move', agentId: I1, from: step.from, to: step.to });
+      seq.push({ type: 'move', agentId: I2, from: step.from, to: step.to });
+      // Make pattern round2: I2 returns to F (we model as move I2 to from)
+      seq.push({ type: 'move', agentId: I2, from: step.to, to: step.from });
+
+      // Translate pattern: 5 rounds as described
+      // Round T1: L probes forward
+      seq.push({ type: 'move', agentId: L, from: step.from, to: step.to });
+      // Round T2: I2 moves forward to meet L
+      seq.push({ type: 'move', agentId: I2, from: step.from, to: step.to });
+      // Round T3: I2 returns to relay
+      seq.push({ type: 'move', agentId: I2, from: step.to, to: step.from });
+      // Round T4: F and I2 advance together
+      seq.push({ type: 'move', agentId: F, from: step.from, to: step.to });
+      seq.push({ type: 'move', agentId: I2, from: step.from, to: step.to });
+      // Round T5: I1 catches up
+      seq.push({ type: 'move', agentId: I1, from: step.from, to: step.to });
+
+      // Convert moves that enter BH to enterBH actions
+      seq.forEach(a => {
+        if (a.to === s.bhNode && !s.bhLocated) actions.push({ type: 'enterBH', agentId: a.agentId, from: a.from, to: a.to });
+        else actions.push({ type: 'move', agentId: a.agentId, from: a.from, to: a.to });
+      });
+      // mark an expected return window for the group so F1/F2 can start cautious probing
+      if (!s.pendingReturn) {
+        s.pendingReturn = { from: step.from, to: step.to, expiryRound: s.round + 3, handled: false };
+      }
+    } else {
+      // Unknown-map exploration: perform cautious Explore(v) using three explorers
+      if (s.know === 'unknown' && step.classify) {
+        const explorers = s.agents.filter(a => a.alive && !a.byzantine && a.pos === step.from && !['Marker','L','I1','I2','F'].includes(a.role)).slice(0,3);
+        if (explorers.length === 3) {
+          explorers.forEach(exp => {
+            if (step.to === s.bhNode && !s.bhLocated) actions.push({ type: 'enterBH', agentId: exp.id, from: step.from, to: step.to });
+            else actions.push({ type: 'move', agentId: exp.id, from: step.from, to: step.to });
+            // return
+            actions.push({ type: 'move', agentId: exp.id, from: step.to, to: step.from });
+          });
+          // after explorers return mark edge safe
+          actions.push({ type: 'markEdgeSafe', from: step.from, to: step.to });
+        } else {
+          movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
+        }
+      } else {
+        movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
+      }
+    }
     if (movers.length === 0) {
       logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical DFS cursor to ${step.to}.`);
       actions.push({ type: 'markMoveOnly' });
@@ -296,6 +485,16 @@ function moveAgent(agentId, from, to) {
   s.currentNode = to;
   markCurrentNode(to);
   logAdd(s.round, agent.byzantine ? 'byz' : 'info', `A${agent.id} moves ${from}->${to} (${agent.byzantine ? 'Byzantine' : 'good'}).`);
+  // Track visits for perpetual exploration target
+  if (s.mode && s.mode.startsWith('perp') && s.perpTargetNodes && s.perpTargetNodes.has(to)) {
+    s.cycleVisited.add(to);
+    // If we've visited all target nodes in this cycle, declare perpetual success
+    if (s.cycleVisited.size === s.perpTargetNodes.size) {
+      s.done = true;
+      logAdd(s.round, 'system', 'Perpetual exploration cycle completed for target component.');
+      showOverlay('success', 'PERPETUAL EXPLORATION ACHIEVED', `All ${s.perpTargetNodes.size} nodes visited this cycle.`);
+    }
+  }
 }
 
 function loseAgentToBlackHole(agentId, from, to) {
@@ -328,6 +527,8 @@ function completeOperation(op) {
     cyEdge.addClass('dangerous');
     cyRef.instance.getElementById(`n${to}`).removeClass('blackhole').addClass('revealed');
     logAdd(s.round, 'danger', `CCP on edge (${from}->${to}): BLACK HOLE DETECTED. Total BH losses: ${s.lostInBH} (target f+1=${s.f + 1}).`);
+    // Compute components excluding the BH node and label them C1 (home) and C2 (other)
+    computeComponentsAfterBH(s, s.bhNode);
     return;
   }
 
@@ -343,6 +544,28 @@ function completeOperation(op) {
     maybeIdentifyByzantine(from, to);
     logAdd(s.round, 'safe', `${label}: edge (${from}->${to}) certified SAFE after sequential CCP movement.`);
   }
+
+  // If this operation was a cautious probe sequence, handle F1/F2 outcome.
+  if (op.cautiousProbe && s.lastCautiousProbe) {
+    const info = s.lastCautiousProbe;
+    const f1 = s.agents.find(a => a.id === info.f1Id);
+    const f2 = s.agents.find(a => a.id === info.f2Id);
+    // If F1 was lost during the probe, let F2 settle as Anchor and mark BH located.
+    if (f1 && !f1.alive) {
+      if (f2 && f2.alive) {
+        f2.settled = true;
+        f2.role = 'Anchor';
+        s.anchorsPlaced = (s.anchorsPlaced || 0) + 1;
+        s.bhLocated = true;
+        s.bhNode = info.to;
+        cyRef.instance.getElementById(`n${info.to}`).removeClass('blackhole').addClass('revealed');
+        logAdd(s.round, 'danger', `F1 lost on cautious probe; A${f2.id} becomes Anchor at ${info.from}. BH marked at ${info.to}.`);
+      }
+    } else {
+      logAdd(s.round, 'info', 'Cautious probe completed: F1 returned safely.');
+    }
+    s.lastCautiousProbe = null;
+  }
 }
 
 function maybeIdentifyByzantine(from, to) {
@@ -356,8 +579,63 @@ function maybeIdentifyByzantine(from, to) {
   logAdd(s.round, 'byz', `Byzantine agent A${byz.id} identified via CCP behavior on edge (${from}->${to})!`);
 }
 
+function computeComponentsAfterBH(s, bhNode) {
+  const n = s.n;
+  const neighbors = s.neighbors;
+  const comp = new Array(n).fill(null);
+  let cid = 0;
+  for (let i = 0; i < n; i++) {
+    if (i === bhNode) continue;
+    if (comp[i] !== null) continue;
+    // BFS
+    const q = [i];
+    comp[i] = cid;
+    while (q.length) {
+      const u = q.shift();
+      for (const v of (neighbors[u] || [])) {
+        if (v === bhNode) continue;
+        if (comp[v] === null) { comp[v] = cid; q.push(v); }
+      }
+    }
+    cid++;
+  }
+  s.nodeComponent = comp;
+  // Home component id
+  const homeComp = comp[s.homebase];
+  s.component = homeComp === 0 ? 'C1' : 'C1';
+  // mark nodes visually
+  cyRef.instance.nodes().forEach(node => {
+    const nid = +node.id().slice(1);
+    node.removeClass('C1'); node.removeClass('C2');
+    if (nid === bhNode) return;
+    const label = comp[nid] === homeComp ? 'C1' : 'C2';
+    node.addClass(label);
+    // append component to label text
+    const base = node.data('label') || `${nid}`;
+    node.data('label', `${base}\n${label}`);
+  });
+  // set exploration target for Perp modes
+  if (s.mode === 'perp-bbh-home') {
+    s.perpTargetNodes = new Set(comp.map((c, idx) => c === homeComp ? idx : -1).filter(x => x >= 0));
+  } else if (s.mode === 'perp-bbh') {
+    // pick any non-home component as target (largest)
+    const counts = {};
+    for (let i = 0; i < comp.length; i++) if (comp[i] !== null) counts[comp[i]] = (counts[comp[i]] || 0) + 1;
+    let pick = null; let best = -1;
+    for (const [c, cnt] of Object.entries(counts)) {
+      if (+c === homeComp) continue;
+      if (cnt > best) { best = cnt; pick = +c; }
+    }
+    if (pick === null) pick = homeComp;
+    s.perpTargetNodes = new Set(comp.map((c, idx) => c === pick ? idx : -1).filter(x => x >= 0));
+  }
+  s.cycleVisited = new Set();
+}
+
 function shouldFinish(s) {
   if (s.currentOperation) return false;
+  // Perpetual exploration modes do not finish normally; success is handled separately
+  if (s.mode && s.mode.startsWith('perp')) return false;
   if (s.know === 'unknown') return allEdgesClassified(s) || s.traversalIndex >= s.traversalOrder.length;
   return s.traversalIndex >= s.traversalOrder.length || s.bhLocated;
 }
@@ -380,6 +658,12 @@ function refreshDisplay() {
   setStat('sAlive', s.agents.filter(a => a.alive).length);
   setStat('sLost', s.lostInBH);
   setStat('sByzFound', s.identifiedByzantine.size);
+  setStat('sPhase', s.currentPhase ?? 0);
+  setStat('sMaxDist', s.maxDistance ?? 1);
+  setStat('sComponent', s.component ?? 'C1');
+  setStat('sBBHActivations', s.bbhActivations ?? 0);
+  setStat('sAnchors', s.anchorsPlaced ?? 0);
+  setStat('sUnanchored', s.unanchoredNeighbors ?? 0);
   $('progressBar').style.width = progressPercent(s) + '%';
   updateAgentChips();
   updateEdgeTable();
@@ -503,6 +787,12 @@ export function renderAgentsOnGraph() {
       ].filter(Boolean).join(' ');
       particle.style.transform = `translate(${x}px, ${y}px)`;
       particle.dataset.agentId = `A${agent.id}`;
+      // Show role label and anchor state on the particle
+      const roleSpan = document.createElement('span');
+      roleSpan.className = 'agent-role';
+      roleSpan.textContent = agent.role ? agent.role : '';
+      if (agent.settled) particle.classList.add('anchored');
+      particle.appendChild(roleSpan);
       layer.appendChild(particle);
     });
   });

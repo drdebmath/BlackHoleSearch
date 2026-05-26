@@ -75,6 +75,19 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         </select>
       </label>
 
+      <label>
+        SIMULATION MODE
+        <select id="simMode">
+          <option value="find-bbh">Find-BBH (BHS)</option>
+          <option value="perp-bbh">PerpExploration-BBH</option>
+          <option value="perp-bbh-home">PerpExploration-BBH-Home</option>
+        </select>
+      </label>
+
+      <label>
+        <input type="checkbox" id="bbhAdversary"> BBH adversarial activation (per-round)
+      </label>
+
       <div class="formula-box" id="formulaBox">
         — configure above —
       </div>
@@ -149,6 +162,30 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
       <div class="stat-cell">
         <div class="stat-label">EDGES DANGER</div>
         <div class="stat-val sv-red" id="sEdgeDanger">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">PHASE</div>
+        <div class="stat-val sv-cyan" id="sPhase">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">MAX DISTANCE</div>
+        <div class="stat-val sv-green" id="sMaxDist">1</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">COMPONENT</div>
+        <div class="stat-val sv-purple" id="sComponent">C1</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">BBH ACTIVATIONS</div>
+        <div class="stat-val sv-red" id="sBBHActivations">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">ANCHORS PLACED</div>
+        <div class="stat-val sv-green" id="sAnchors">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">UNANCHORED NEIGHBORS |U|</div>
+        <div class="stat-val sv-cyan" id="sUnanchored">0</div>
       </div>
     </div>
 
