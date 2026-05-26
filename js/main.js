@@ -105,6 +105,10 @@ runBtn.onclick = () => {
     runRef.intervalId = null;
     runBtn.textContent = '▶ RUN SIMULATION';
   } else {
+    // If the graph hasn't been built yet (or was reset), build it automatically
+    if (!cyRef.instance) {
+      buildGraph();
+    }
     const speed = +$('speedSel').value;
     runRef.intervalId = setInterval(stepSimulation, speed);
     runBtn.textContent = '⏸ PAUSE';
