@@ -103,7 +103,7 @@ export function buildGraph() {
     component: 'C1',
     pendingReturn: null,
     lastCautiousProbe: null,
-    lastPhaseRound: -1,
+    lastPhaseTraversalIndex: -1,
   };
   state.traversalOrder = know === 'known'
     ? buildKnownDFSPlan(state)
@@ -234,11 +234,11 @@ export function stepSimulation() {
   if (!simState || simState.done) return;
 
   const s = simState;
-  // Phase increment: when returning to home with no pending operation, increment phase
-  if (s.currentNode === s.homebase && !s.currentOperation && s.round !== s.lastPhaseRound) {
+  // Phase increment: when returning to home with no pending operation AND traversal has progressed
+  if (s.currentNode === s.homebase && !s.currentOperation && s.traversalIndex > s.lastPhaseTraversalIndex) {
     s.currentPhase = (s.currentPhase || 0) + 1;
     s.maxDistance = Math.pow(2, s.currentPhase);
-    s.lastPhaseRound = s.round;
+    s.lastPhaseTraversalIndex = s.traversalIndex;
     logAdd(s.round, 'info', `Phase ${s.currentPhase} start — Max Distance ${s.maxDistance}.`);
   }
   // Check for expired expected returns and trigger cautious probing if needed.
