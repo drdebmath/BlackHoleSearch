@@ -1,6 +1,6 @@
 // Entry point: wires up DOM events and starts the simulator.
 
-import { cyRef, runRef } from './state.js';
+import { cyRef, runRef, simState } from './state.js';
 import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph, setAdversaryView, setBBHControlMode, setBBHControlValue, setBBHAgentThreshold, setBBHActive } from './simulation.js';
 import { $, updateFormula, closeOverlay, switchTab, showOverlay } from './ui.js';
 
@@ -100,6 +100,9 @@ $('resetBtn').onclick = resetSimulation;
 
 function safeStep() {
   try {
+    if (!cyRef.instance || !simState) {
+      buildGraph();
+    }
     stepSimulation();
   } catch (err) {
     if (runRef.intervalId) { clearInterval(runRef.intervalId); runRef.intervalId = null; }
@@ -118,7 +121,7 @@ runBtn.onclick = () => {
     runBtn.textContent = '▶ RUN SIMULATION';
   } else {
     // If the graph hasn't been built yet (or was reset), build it automatically
-    if (!cyRef.instance) {
+    if (!cyRef.instance || !simState) {
       buildGraph();
     }
     const speed = +$('speedSel').value;
