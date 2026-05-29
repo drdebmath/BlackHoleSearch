@@ -91,6 +91,7 @@ export function buildGraph() {
 
   const state = {
     n, f, k, homebase, bhNode, agents, neighbors, ports, edges,
+    topo,
     edgeStatus, know, comm, delta,
     round: 0,
     done: false,
@@ -421,6 +422,20 @@ function prepareOperation(s, step) {
         };
       }
     }
+  }
+
+  // For tree topologies, prefer a simple single-agent hop (DFS stepping):
+  // pick one available mover at `from` and perform a single move to `to`.
+  // This enforces visiting, dead-end/backtracking behavior naturally.
+  if (s.topo === 'tree') {
+    const mover = s.agents.find(a => a.alive && a.pos === step.from && a.role !== 'Marker');
+    if (mover) {
+      actions.push({ type: 'move', agentId: mover.id, from: step.from, to: step.to });
+      return { step, actions, index: 0 };
+    }
+    // If no mover present, advance logical cursor only
+    actions.push({ type: 'markMoveOnly' });
+    return { step, actions, index: 0 };
   }
 
   const dangerous = step.to === s.bhNode;
