@@ -1,18 +1,11 @@
-// Entry point: wires up DOM events and starts the simulator.
-
-import { cyRef, runRef, simState } from './state.js';
-import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph, setAdversaryView, setBBHControlMode, setBBHControlValue, setBBHAgentThreshold, setBBHActive } from './simulation.js';
-import { $, updateFormula, closeOverlay, switchTab, showOverlay } from './ui.js';
+import { cyRef, runRef } from './state.js';
+import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph } from './simulation.js';
+import { $, updateFormula, closeOverlay, switchTab, setupBBHUI } from './ui.js';
 
 const nNodes  = $('nNodes');
 const fFault  = $('fFault');
 const runBtn  = $('runBtn');
 const panelToggle = $('panelToggle');
-const adversaryView = $('adversaryView');
-const bbhControlMode = $('bbhControlMode');
-const bbhManualActive = $('bbhManualActive');
-const bbhEveryN = $('bbhEveryN');
-const bbhAgentThreshold = $('bbhAgentThreshold');
 const panelStoreKey = 'bhs-panels-collapsed';
 const mobilePanelStoreKey = 'bhs-mobile-panels-collapsed';
 const mobilePanelQuery = window.matchMedia('(max-width: 900px)');
@@ -68,51 +61,11 @@ nNodes.oninput = () => { $('nVal').textContent = nNodes.value; updateFormula(); 
 fFault.oninput = () => { $('fVal').textContent = fFault.value; updateFormula(); };
 $('topoKnow').onchange = updateFormula;
 $('commModel').onchange = updateFormula;
-
-if (adversaryView) {
-  adversaryView.onchange = () => setAdversaryView(adversaryView.checked);
-}
-if (bbhControlMode) {
-  const updateModeRows = () => {
-    const mode = bbhControlMode.value;
-    document.getElementById('bbhManualRow').style.display = mode === 'manual' ? 'block' : 'none';
-    document.getElementById('bbhEveryRow').style.display = mode === 'every' ? 'block' : 'none';
-    document.getElementById('bbhAgentsRow').style.display = mode === 'agents' ? 'block' : 'none';
-  };
-  bbhControlMode.onchange = () => {
-    setBBHControlMode(bbhControlMode.value);
-    updateModeRows();
-  };
-  updateModeRows();
-}
-if (bbhManualActive) {
-  bbhManualActive.onchange = () => setBBHActive(bbhManualActive.checked);
-}
-if (bbhEveryN) {
-  bbhEveryN.oninput = () => setBBHControlValue(bbhEveryN.value);
-}
-if (bbhAgentThreshold) {
-  bbhAgentThreshold.oninput = () => setBBHAgentThreshold(bbhAgentThreshold.value);
-}
+$('simMode').onchange = updateFormula;
 
 $('buildBtn').onclick = buildGraph;
 $('resetBtn').onclick = resetSimulation;
-
-function safeStep() {
-  try {
-    if (!cyRef.instance || !simState) {
-      buildGraph();
-    }
-    stepSimulation();
-  } catch (err) {
-    if (runRef.intervalId) { clearInterval(runRef.intervalId); runRef.intervalId = null; }
-    runBtn.textContent = '▶ RUN SIMULATION';
-    console.error(err);
-    showOverlay('failure', 'RUNTIME ERROR', err && err.message ? err.message : String(err));
-  }
-}
-
-$('stepBtn').onclick = safeStep;
+$('stepBtn').onclick  = stepSimulation;
 
 runBtn.onclick = () => {
   if (runRef.intervalId) {
@@ -120,41 +73,18 @@ runBtn.onclick = () => {
     runRef.intervalId = null;
     runBtn.textContent = '▶ RUN SIMULATION';
   } else {
-    // If the graph hasn't been built yet (or was reset), build it automatically
-    if (!cyRef.instance || !simState) {
-      buildGraph();
-    }
     const speed = +$('speedSel').value;
-    runRef.intervalId = setInterval(safeStep, speed);
+    runRef.intervalId = setInterval(stepSimulation, speed);
     runBtn.textContent = '⏸ PAUSE';
   }
 };
-
-// Global error handlers to surface runtime problems to the UI overlay box
-window.addEventListener('error', (ev) => {
-  try {
-    const msg = ev.error?.message || ev.message || String(ev);
-    console.error('Uncaught error:', msg);
-    showOverlay('failure', 'SYSTEM ERROR', msg);
-  } catch (e) {
-    console.error('Failed to show error overlay:', e);
-  }
-});
-
-window.addEventListener('unhandledrejection', (ev) => {
-  try {
-    const msg = ev.reason?.message || String(ev.reason);
-    console.error('Unhandled promise rejection:', msg);
-    showOverlay('failure', 'UNHANDLED PROMISE', msg);
-  } catch (e) {
-    console.error('Failed to show error overlay:', e);
-  }
-});
 
 $('overlayCloseBtn').addEventListener('click', closeOverlay);
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });
 
+// Initialize v2 UI and Logic
+setupBBHUI();
 updateFormula();
 buildGraph();

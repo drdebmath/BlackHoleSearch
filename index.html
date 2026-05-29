@@ -32,7 +32,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
 
 <div class="main">
 
-  <!-- LEFT PANEL -->
   <div class="left-panel" id="simControls">
     <div class="section-title">// GRAPH CONFIG</div>
     <div class="controls">
@@ -79,44 +78,13 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         SIMULATION MODE
         <select id="simMode">
           <option value="find-bbh">Find-BBH (BHS)</option>
-          <option value="perp-bbh">PerpExploration-BBH</option>
-          <option value="perp-bbh-home">PerpExploration-BBH-Home</option>
+          <option value="perp-exp-bbh">PerpExploration-BBH</option>
+          <option value="perp-exp-bbh-home">PerpExploration-BBH-Home</option>
         </select>
-      </label>
-
-      <label>
-        <input type="checkbox" id="bbhAdversary"> BBH adversarial activation (per-round)
       </label>
 
       <div class="formula-box" id="formulaBox">
-        — configure above —
-      </div>
-
-      <div class="sep"></div>
-
-      <div class="section-title">// ADVERSARY CONTROL</div>
-      <label>
-        <input type="checkbox" id="adversaryView"> Adversary View
-      </label>
-      <label>
-        BBH CONTROL MODE
-        <select id="bbhControlMode">
-          <option value="manual">Manual</option>
-          <option value="every">Every N rounds</option>
-          <option value="agents">When ≥ M agents on BH</option>
-        </select>
-      </label>
-      <label id="bbhManualRow">
-        <input type="checkbox" id="bbhManualActive"> BBH active now
-      </label>
-      <label id="bbhEveryRow" class="bbh-schedule-row" style="display:none;">
-        EVERY N ROUNDS
-        <input type="number" id="bbhEveryN" min="2" value="5">
-      </label>
-      <label id="bbhAgentsRow" class="bbh-schedule-row" style="display:none;">
-        AGENT THRESHOLD
-        <input type="number" id="bbhAgentThreshold" min="1" value="3">
-      </label>
+        </div>
 
       <div class="sep"></div>
 
@@ -139,6 +107,39 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
 
     </div>
 
+    <div class="section-title">// ADVERSARY CONTROL</div>
+    <div class="controls" style="padding-top: 8px;">
+      
+      <label style="flex-direction: row; align-items: center; cursor: pointer;">
+        <input type="checkbox" id="advViewToggle">
+        <span>Adversary View</span>
+      </label>
+
+      <label style="margin-top: 8px;">
+        BBH CONTROL MODE
+        <select id="bbhControlMode">
+          <option value="manual">Manual</option>
+          <option value="n-rounds">Every N rounds</option>
+          <option value="m-agents">When &ge; M agents on BH</option>
+        </select>
+      </label>
+
+      <label id="bbhNContainer" style="display:none;">
+        N (Rounds)
+        <input type="number" id="bbhN" value="5" min="1">
+      </label>
+
+      <label id="bbhMContainer" style="display:none;">
+        M (Agents)
+        <input type="number" id="bbhM" value="2" min="1">
+      </label>
+
+      <label style="flex-direction: row; align-items: center; margin-top: 8px; cursor: pointer;">
+        <input type="checkbox" id="bbhActiveNow">
+        <span style="color: var(--danger); font-weight: bold;">BBH active now</span>
+      </label>
+    </div>
+
     <div class="legend">
       <div class="legend-item"><div class="dot dot-good"></div>GOOD AGENT</div>
       <div class="legend-item"><div class="dot dot-byz"></div>BYZANTINE</div>
@@ -150,7 +151,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     </div>
   </div>
 
-  <!-- GRAPH -->
   <div class="graph-area">
     <div id="cy"></div>
     <div id="agentLayer" aria-hidden="true"></div>
@@ -162,7 +162,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     <div id="tooltip"></div>
   </div>
 
-  <!-- RIGHT PANEL -->
   <div class="right-panel" id="simStatus">
     <div class="stats-grid">
       <div class="stat-cell">
@@ -174,28 +173,20 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         <div class="stat-val sv-green" id="sAlive">—</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-label">AGENTS LOST</div>
-        <div class="stat-val sv-red" id="sAgentsLost">0</div>
+        <div class="stat-label">LOST IN BH</div>
+        <div class="stat-val sv-red" id="sLost">0</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-label">ROUNDS SURVIVED</div>
-        <div class="stat-val sv-purple" id="sRoundsSurvived">0</div>
+        <div class="stat-label">BYZ FOUND</div>
+        <div class="stat-val sv-purple" id="sByzFound">0</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-label">SAFE COVERAGE</div>
-        <div class="stat-val sv-green" id="sSafeCoverage">0%</div>
+        <div class="stat-label">EDGES SAFE</div>
+        <div class="stat-val sv-green" id="sEdgeSafe">0</div>
       </div>
       <div class="stat-cell">
-        <div class="stat-label">SAFE NODES</div>
-        <div class="stat-val sv-cyan" id="sSafeNodes">0</div>
-      </div>
-      <div class="stat-cell">
-        <div class="stat-label">ADVERSARY MODE</div>
-        <div class="stat-val sv-red" id="sAdvMode">manual</div>
-      </div>
-      <div class="stat-cell">
-        <div class="stat-label">BBH STATE</div>
-        <div class="stat-val sv-orange" id="sBBHState">inactive</div>
+        <div class="stat-label">EDGES DANGER</div>
+        <div class="stat-val sv-red" id="sEdgeDanger">0</div>
       </div>
     </div>
 
@@ -239,9 +230,6 @@ themeToggle.onclick = () => {
 };
 syncThemeToggle();
 </script>
- <footer class="footer-credit">
-    <span>Developed by Vansh Gupta</span>
-    <span class="version-badge">v1.9</span>
- </footer>
+<footer class="footer-credit">Developed by Vansh Gupta</footer>
 </body>
 </html>

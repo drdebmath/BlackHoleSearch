@@ -236,6 +236,27 @@ select {
 }
 select:focus { border-color: var(--accent); }
 
+input[type=number] {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 5px 8px;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  width: 100%;
+  outline: none;
+}
+input[type=number]:focus { border-color: var(--accent); }
+
+input[type=checkbox] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+  margin-right: 6px;
+}
+
 .val-display {
   font-size: 16px;
   font-family: var(--font-mono);
@@ -258,18 +279,6 @@ select:focus { border-color: var(--accent); }
 }
 .btn-primary { border-color: var(--accent); color: var(--accent); }
 .btn-primary:hover { background: rgba(0, 229, 255, 0.1); box-shadow: var(--glow); }
-.bbh-schedule-row {
-  display: flex;
-  flex-direction: column;
-}
-.agent-chip.explorer { border-color: #00e676; }
-.agent-chip.marker { border-color: #ffb700; }
-.node-trap-flash { animation: trapFlash 0.6s ease-out; }
-@keyframes trapFlash {
-  0% { box-shadow: 0 0 0px #ff3d5a; }
-  50% { box-shadow: 0 0 18px #ff3d5a; }
-  100% { box-shadow: 0 0 0px #ff3d5a; }
-}
 .btn-danger  { border-color: var(--danger); color: var(--danger); }
 .btn-danger:hover  { background: rgba(255, 61, 90, 0.1); }
 .btn-warn    { border-color: var(--warn);   color: var(--warn); }
@@ -475,10 +484,8 @@ body.panels-collapsed .right-panel {
 .agent-particle.good { color: var(--agent-good); }
 .agent-particle.byz { color: var(--agent-byz); }
 .agent-particle.identified { color: var(--agent-identified); }
-.agent-particle.explorer { box-shadow: 0 0 16px #00e676; }
-.agent-particle.marker { box-shadow: 0 0 12px #ffb700; }
-
-.agent-particle.anchored {
+.agent-particle.active {
+  width: 17px;
   height: 17px;
   margin: -8.5px 0 0 -8.5px;
   border-color: var(--text);
@@ -648,27 +655,6 @@ body.panels-collapsed .right-panel {
     bottom: 8px;
     border-radius: 0 0 4px 4px;
   }
-
-.footer-credit {
-  position: fixed;
-  bottom: 10px;
-  right: 14px;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  color: var(--text-muted, #ccc);
-  font-size: 0.9rem;
-  z-index: 50;
-}
-
-.version-badge {
-  display: inline-flex;
-  padding: 0.2rem 0.6rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-}
 
   body.panels-collapsed .left-panel {
     width: auto;

@@ -1,15 +1,8 @@
-// DOM helpers: stats, event log, agent chips, edge table, overlay, tabs.
-
-import { simState } from './state.js';
+import { simState, cyRef } from './state.js';
 
 export const $ = id => document.getElementById(id);
 
-export function setStat(id, val) { 
-  const el = $(id);
-  if (el) {
-    el.textContent = val; 
-  }
-}
+export function setStat(id, val) { $(id).textContent = val; }
 
 export function logAdd(round, type, msg) {
   const log = $('log');
@@ -33,14 +26,9 @@ export function updateAgentChips() {
     else if (a.byzantine && a.identified) classes.push('identified');
     else if (a.byzantine) classes.push('byz');
     else classes.push('good');
-    const roleType = a.roleType || (a.role === 'L' ? 'Explorer' : 'Marker');
-    classes.push(roleType === 'Explorer' ? 'explorer' : 'marker');
     if (a.alive && simState.activeAgentId === a.id) classes.push('active');
     chip.className = classes.join(' ');
-    const role = a.role ? ` ${a.role}` : '';
-    const typeLabel = roleType === 'Explorer' ? 'E' : 'M';
-    const anchor = a.settled ? ' ⚓' : '';
-    chip.textContent = `A${a.id}${a.byzantine ? ' ☿' : ''} ${typeLabel}${role}${anchor}${!a.alive ? ' ✕' : ` @${a.pos}`}`;
+    chip.textContent = `A${a.id}${a.byzantine ? ' ☿' : ''}${!a.alive ? ' ✕' : ` @${a.pos}`}`;
     list.appendChild(chip);
   });
 }
@@ -76,30 +64,36 @@ export function switchTab(name) {
   });
 }
 
+export function setupBBHUI() {
+  const modeSelect = $('bbhControlMode');
+  const nCont = $('bbhNContainer');
+  const mCont = $('bbhMContainer');
+
+  modeSelect.addEventListener('change', () => {
+    nCont.style.display = modeSelect.value === 'n-rounds' ? 'flex' : 'none';
+    mCont.style.display = modeSelect.value === 'm-agents' ? 'flex' : 'none';
+  });
+
+  $('advViewToggle').addEventListener('change', (e) => {
+    if (!cyRef.instance || !simState) return;
+    const bhNode = cyRef.instance.getElementById(`n${simState.bhNode}`);
+    if (e.target.checked) {
+      bhNode.addClass('revealed');
+    } else if (!simState.bhLocated) {
+      bhNode.removeClass('revealed');
+    }
+  });
+}
+
 export function updateFormula() {
   const f = +$('fFault').value;
-  const know = $('topoKnow').value;
-  const comm = $('commModel').value;
-
-  let k, time, alg;
-  if (know === 'known') {
-    k = 2 * f + 2;
-    time = 'O(n + f)';
-    alg = 'DFS+CCP';
-  } else if (comm === 'whiteboard') {
-    k = '(f+1)(∆+1)';
-    time = 'O(m + f)';
-    alg = 'DFS+CCP+WB';
-  } else {
-    k = '(f+1)(∆+1)+3f+1';
-    time = 'O(m·n + f)';
-    alg = 'DFS+CCP+MAP';
-  }
-
+  const k = Math.max(4, 2 * f + 2); // Enforce minimum 4 agents for visual/logic bounds
+  
   $('formulaBox').innerHTML = `
-    <span class="hi">k ≥ ${typeof k === 'number' ? `<b>${k}</b>` : k}</span> agents needed<br>
-    Time: <span class="hi-g">${time}</span><br>
-    Algorithm: <span class="hi">${alg}</span><br>
+    <span class="hi">BBH adversarial activation (per-round)</span><br>
+    <span class="hi">k ≥ ${k}</span> agents needed<br>
+    Time: <span class="hi-g">O(n + f)</span><br>
+    Algorithm: <span class="hi">DFS+CCP</span><br>
     <span class="hi-r">f = ${f}</span> Byzantine fault(s)
   `;
 }
