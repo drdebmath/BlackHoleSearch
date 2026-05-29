@@ -249,6 +249,17 @@ function buildUnknownDFSPlan(state) {
   return plan;
 }
 
+function isConfirmedSafeNode(s, nodeId) {
+  return nodeId === s.homebase || s.safeNodes.has(nodeId);
+}
+
+function findSafeBacktrackNeighbor(s, nodeId) {
+  for (const neighbor of (s.neighbors[nodeId] || [])) {
+    if (isConfirmedSafeNode(s, neighbor)) return neighbor;
+  }
+  return null;
+}
+
 export function stepSimulation() {
   if (!simState || simState.done) return;
 
@@ -391,6 +402,25 @@ function discoverAgentOnBH(agentId, from, to) {
 function prepareOperation(s, step) {
   if (!step) {
     return { step: { from: s.currentNode, to: s.currentNode }, actions: [{ type: 'noop' }], index: 0 };
+  }
+
+  // If we are currently at a node that has not been confirmed safe, do not
+  // continue exploring outward from it. Instead, backtrack along the first
+  // safe neighbor we know, preventing agents from passing through or jumping
+  // across an unconfirmed black hole node.
+  if (step.from !== s.homebase && !isConfirmedSafeNode(s, step.from)) {
+    const backtrackTo = findSafeBacktrackNeighbor(s, step.from);
+    if (backtrackTo !== null) {
+      const backtracker = s.agents.find(a => a.alive && a.pos === step.from && a.role !== 'Marker');
+      if (backtracker) {
+        logAdd(s.round, 'warn', `Node ${step.from} is unconfirmed; backtracking to ${backtrackTo} instead of continuing.`);
+        return {
+          step: { from: step.from, to: backtrackTo, label: 'BACKTRACK FROM UNCONFIRMED NODE' },
+          actions: [{ type: 'move', agentId: backtracker.id, from: step.from, to: backtrackTo }],
+          index: 0,
+        };
+      }
+    }
   }
 
   const dangerous = step.to === s.bhNode;
