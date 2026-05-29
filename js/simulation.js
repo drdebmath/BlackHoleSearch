@@ -392,12 +392,25 @@ function discoverAgentOnBH(agentId, from, to) {
   const s = simState;
   const agent = s.agents.find(a => a.id === agentId);
   if (!agent) return;
-  agent.pos = to;
+  // If the BBH remained dormant, treat this as a cautious probe: the agent
+  // does not remain on the BH node and should immediately return to `from`.
+  // This prevents subsequent moves from passing through the (suspected)
+  // BH node and forces backtracking behavior.
   agent.alive = true;
   agent.status = 'alive';
-  s.currentNode = to;
-  s.visitedNodes.add(to);
-  logAdd(s.round, 'info', `A${agent.id} entered BH node ${to} while the BBH remained dormant.`);
+  if (to === s.bhNode && !s.bhLocated) {
+    // Agent probed and returned safely
+    agent.pos = from;
+    s.currentNode = from;
+    logAdd(s.round, 'info', `A${agent.id} probed BH node ${to} (dormant) and returned to ${from}.`);
+    // do NOT add `to` to visited/safe sets; leave it unconfirmed
+  } else {
+    // Non-BH dormant case: adopt the node as visited
+    agent.pos = to;
+    s.currentNode = to;
+    s.visitedNodes.add(to);
+    logAdd(s.round, 'info', `A${agent.id} entered node ${to} while the BBH remained dormant.`);
+  }
 }
 
 function prepareOperation(s, step) {
