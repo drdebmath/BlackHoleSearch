@@ -1,3 +1,9 @@
+// Black Hole Search simulation engine.
+//
+// The simulator now keeps two levels of motion:
+// 1. a DFS traversal plan over the graph, including physical backtracking; and
+// 2. per-agent substeps, so only one agent moves or is lost per visual step.
+
 import { cyRef, runRef, simState, setSimState } from './state.js';
 import { generateGraph } from './graph-generation.js';
 import { initCy } from './cytoscape-setup.js';
@@ -75,11 +81,7 @@ export function buildGraph() {
   setSimState(state);
 
   cy.getElementById('n' + homebase).addClass('homebase');
-  
-  // Only reveal if Adversary View is on
-  if ($('advViewToggle').checked) {
-    cy.getElementById('n' + bhNode).addClass('revealed');
-  }
+  cy.getElementById('n' + bhNode).addClass('blackhole');
 
   updateAgentChips();
   updateEdgeTable();
@@ -94,7 +96,7 @@ export function buildGraph() {
 
   logClear();
   logAdd(0, 'system', `Graph built: ${n} nodes, ${edges.length} edges, Delta=${delta}`);
-  logAdd(0, 'system', `Byzantine Black Hole (BBH) at node ${bhNode} (hidden from agents)`);
+  logAdd(0, 'system', `Black Hole at node ${bhNode} (hidden from agents)`);
   logAdd(0, 'system', `Team: k=${k} agents, f=${f} Byzantine`);
   logAdd(0, 'system', `Algorithm: ${know === 'known' ? 'WhiteboardMap/ProbeMap' : 'WhiteboardWithoutMap/ProbeWithoutMap'}`);
   logAdd(0, 'info', `Homebase: node ${homebase}. DFS traversal plan ready.`);
@@ -198,67 +200,6 @@ function buildUnknownDFSPlan(state) {
   return plan;
 }
 
-function evaluateAdversaryState(s) {
-  const mode = $('bbhControlMode').value;
-  const activeCheckbox = $('bbhActiveNow');
-
-  if (mode === 'n-rounds') {
-    const n = +$('bbhN').value;
-    activeCheckbox.checked = (s.round > 0 && s.round % n === 0);
-  } else if (mode === 'm-agents') {
-    const m = +$('bbhM').value;
-    const agentsOnBH = s.agents.filter(a => a.alive && a.pos === s.bhNode).length;
-    if (agentsOnBH >= m) activeCheckbox.checked = true;
-  }
-
-  const isBBHActive = activeCheckbox.checked;
-
-  if (isBBHActive) {
-    const doomedAgents = s.agents.filter(a => a.alive && a.pos === s.bhNode);
-    doomedAgents.forEach(agent => {
-      agent.alive = false;
-      agent.status = 'dead';
-      s.lostInBH++;
-      logAdd(s.round, 'danger', `BBH ACTIVATED! A${agent.id} was swallowed at node ${s.bhNode}.`);
-    });
-  }
-
-  return isBBHActive;
-}
-
-function prepareOperation(s, step) {
-  if (!step) {
-    return { step: { from: s.currentNode, to: s.currentNode }, actions: [{ type: 'noop' }], index: 0 };
-  }
-
-  const isBBHActive = evaluateAdversaryState(s);
-  const dangerous = (step.to === s.bhNode && isBBHActive);
-  const actions = [];
-
-  if (dangerous) {
-    if (!s.bhLocated) {
-      const probes = s.agents
-        .filter(a => a.alive && !a.byzantine && a.pos === step.from)
-        .slice(0, s.f + 1);
-      probes.forEach(agent => actions.push({ type: 'lose', agentId: agent.id }));
-      if (probes.length < s.f + 1) {
-        logAdd(s.round, 'warn', `Only ${probes.length} good agent(s) available for the required f+1=${s.f + 1} CCP loss threshold.`);
-      }
-    } else {
-      actions.push({ type: 'markDanger' });
-    }
-  } else {
-    const movers = s.agents.filter(a => a.alive && a.pos === step.from);
-    movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
-    if (movers.length === 0) {
-      logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical DFS cursor to ${step.to}.`);
-      actions.push({ type: 'markMoveOnly' });
-    }
-  }
-
-  return { step, actions, index: 0 };
-}
-
 export function stepSimulation() {
   if (!simState || simState.done) return;
 
@@ -315,6 +256,38 @@ export function stepSimulation() {
   }
 }
 
+function prepareOperation(s, step) {
+  if (!step) {
+    return { step: { from: s.currentNode, to: s.currentNode }, actions: [{ type: 'noop' }], index: 0 };
+  }
+
+  const dangerous = step.to === s.bhNode;
+  const actions = [];
+
+  if (dangerous) {
+    if (!s.bhLocated) {
+      const probes = s.agents
+        .filter(a => a.alive && !a.byzantine && a.pos === step.from)
+        .slice(0, s.f + 1);
+      probes.forEach(agent => actions.push({ type: 'lose', agentId: agent.id }));
+      if (probes.length < s.f + 1) {
+        logAdd(s.round, 'warn', `Only ${probes.length} good agent(s) available for the required f+1=${s.f + 1} CCP loss threshold.`);
+      }
+    } else {
+      actions.push({ type: 'markDanger' });
+    }
+  } else {
+    const movers = s.agents.filter(a => a.alive && a.pos === step.from);
+    movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
+    if (movers.length === 0) {
+      logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical DFS cursor to ${step.to}.`);
+      actions.push({ type: 'markMoveOnly' });
+    }
+  }
+
+  return { step, actions, index: 0 };
+}
+
 function moveAgent(agentId, from, to) {
   const s = simState;
   const agent = s.agents.find(a => a.id === agentId);
@@ -343,17 +316,18 @@ function completeOperation(op) {
   const { from, to, classify, label } = op.step;
   const key = edgeKey(from, to);
   const cyEdge = getCyEdge(from, to);
-  
+  const dangerous = to === s.bhNode;
+
   cyEdge.removeClass('probing');
 
-  if (to === s.bhNode && $('bbhActiveNow').checked) {
+  if (dangerous) {
     s.edgeStatus[key] = 'dangerous';
     s.found = true;
     s.bhLocated = true;
     s.currentNode = from;
     cyEdge.addClass('dangerous');
     cyRef.instance.getElementById(`n${to}`).removeClass('blackhole').addClass('revealed');
-    logAdd(s.round, 'danger', `CCP on edge (${from}->${to}): BLACK HOLE DETECTED. Total BH losses: ${s.lostInBH}.`);
+    logAdd(s.round, 'danger', `CCP on edge (${from}->${to}): BLACK HOLE DETECTED. Total BH losses: ${s.lostInBH} (target f+1=${s.f + 1}).`);
     return;
   }
 

@@ -1,6 +1,8 @@
+// Entry point: wires up DOM events and starts the simulator.
+
 import { cyRef, runRef } from './state.js';
 import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph } from './simulation.js';
-import { $, updateFormula, closeOverlay, switchTab, setupBBHUI } from './ui.js';
+import { $, updateFormula, closeOverlay, switchTab } from './ui.js';
 
 const nNodes  = $('nNodes');
 const fFault  = $('fFault');
@@ -61,7 +63,6 @@ nNodes.oninput = () => { $('nVal').textContent = nNodes.value; updateFormula(); 
 fFault.oninput = () => { $('fVal').textContent = fFault.value; updateFormula(); };
 $('topoKnow').onchange = updateFormula;
 $('commModel').onchange = updateFormula;
-$('simMode').onchange = updateFormula;
 
 $('buildBtn').onclick = buildGraph;
 $('resetBtn').onclick = resetSimulation;
@@ -84,7 +85,5 @@ document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });
 
-// Initialize v2 UI and Logic
-setupBBHUI();
 updateFormula();
 buildGraph();

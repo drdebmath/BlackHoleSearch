@@ -236,27 +236,6 @@ select {
 }
 select:focus { border-color: var(--accent); }
 
-input[type=number] {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 5px 8px;
-  border-radius: 2px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  width: 100%;
-  outline: none;
-}
-input[type=number]:focus { border-color: var(--accent); }
-
-input[type=checkbox] {
-  accent-color: var(--accent);
-  width: 14px;
-  height: 14px;
-  cursor: pointer;
-  margin-right: 6px;
-}
-
 .val-display {
   font-size: 16px;
   font-family: var(--font-mono);

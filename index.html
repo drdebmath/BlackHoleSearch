@@ -32,6 +32,7 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
 
 <div class="main">
 
+  <!-- LEFT PANEL -->
   <div class="left-panel" id="simControls">
     <div class="section-title">// GRAPH CONFIG</div>
     <div class="controls">
@@ -74,17 +75,9 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         </select>
       </label>
 
-      <label>
-        SIMULATION MODE
-        <select id="simMode">
-          <option value="find-bbh">Find-BBH (BHS)</option>
-          <option value="perp-exp-bbh">PerpExploration-BBH</option>
-          <option value="perp-exp-bbh-home">PerpExploration-BBH-Home</option>
-        </select>
-      </label>
-
       <div class="formula-box" id="formulaBox">
-        </div>
+        — configure above —
+      </div>
 
       <div class="sep"></div>
 
@@ -107,39 +100,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
 
     </div>
 
-    <div class="section-title">// ADVERSARY CONTROL</div>
-    <div class="controls" style="padding-top: 8px;">
-      
-      <label style="flex-direction: row; align-items: center; cursor: pointer;">
-        <input type="checkbox" id="advViewToggle">
-        <span>Adversary View</span>
-      </label>
-
-      <label style="margin-top: 8px;">
-        BBH CONTROL MODE
-        <select id="bbhControlMode">
-          <option value="manual">Manual</option>
-          <option value="n-rounds">Every N rounds</option>
-          <option value="m-agents">When &ge; M agents on BH</option>
-        </select>
-      </label>
-
-      <label id="bbhNContainer" style="display:none;">
-        N (Rounds)
-        <input type="number" id="bbhN" value="5" min="1">
-      </label>
-
-      <label id="bbhMContainer" style="display:none;">
-        M (Agents)
-        <input type="number" id="bbhM" value="2" min="1">
-      </label>
-
-      <label style="flex-direction: row; align-items: center; margin-top: 8px; cursor: pointer;">
-        <input type="checkbox" id="bbhActiveNow">
-        <span style="color: var(--danger); font-weight: bold;">BBH active now</span>
-      </label>
-    </div>
-
     <div class="legend">
       <div class="legend-item"><div class="dot dot-good"></div>GOOD AGENT</div>
       <div class="legend-item"><div class="dot dot-byz"></div>BYZANTINE</div>
@@ -151,6 +111,7 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     </div>
   </div>
 
+  <!-- GRAPH -->
   <div class="graph-area">
     <div id="cy"></div>
     <div id="agentLayer" aria-hidden="true"></div>
@@ -162,6 +123,7 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     <div id="tooltip"></div>
   </div>
 
+  <!-- RIGHT PANEL -->
   <div class="right-panel" id="simStatus">
     <div class="stats-grid">
       <div class="stat-cell">
