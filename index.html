@@ -32,6 +32,7 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
 
 <div class="main">
 
+  <!-- LEFT PANEL -->
   <div class="left-panel" id="simControls">
     <div class="section-title">// GRAPH CONFIG</div>
     <div class="controls">
@@ -73,15 +74,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
           <option value="unknown">Unknown Map (Explore)</option>
         </select>
       </label>
-      
-      <label>
-        ADVERSARY MODEL
-        <select id="advModel">
-          <option value="static">Static (Always Active)</option>
-          <option value="probabilistic">Probabilistic (20% Active)</option>
-          <option value="intelligent">Intelligent (Targeted)</option>
-        </select>
-      </label>
 
       <div class="formula-box" id="formulaBox">
         — configure above —
@@ -119,6 +111,7 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     </div>
   </div>
 
+  <!-- GRAPH -->
   <div class="graph-area">
     <div id="cy"></div>
     <div id="agentLayer" aria-hidden="true"></div>
@@ -130,6 +123,7 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     <div id="tooltip"></div>
   </div>
 
+  <!-- RIGHT PANEL -->
   <div class="right-panel" id="simStatus">
     <div class="stats-grid">
       <div class="stat-cell">
