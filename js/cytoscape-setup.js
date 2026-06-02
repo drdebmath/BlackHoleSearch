@@ -48,6 +48,19 @@ const STYLE = [
       'text-outline-width': 2,
     },
   },
+  // NEW: Dormant state for the Intelligent/Probabilistic Adversary
+  {
+    selector: 'node.dormant',
+    style: {
+      'background-color': '#1a1d24',
+      'border-color': '#00e676',
+      'border-width': 2,
+      'border-style': 'dashed',
+      'color': '#00e676',
+      'label': 'DORMANT',
+      'font-size': 9
+    }
+  },
   {
     selector: 'node.revealed',
     style: {
@@ -115,9 +128,12 @@ function showTooltip(evt) {
   const tip = document.getElementById('tooltip');
   const pos = evt.renderedPosition;
   const agentsHere = simState.agents.filter(a => `n${a.pos}` === nid);
-  const here = node.hasClass('blackhole') || node.hasClass('revealed')
-    ? '☠ BLACK HOLE'
-    : node.hasClass('safe') ? '✓ SAFE' : 'Unexplored';
+  
+  let here = 'Unexplored';
+  if (node.hasClass('blackhole') || node.hasClass('revealed')) here = '☠ BLACK HOLE (ACTIVE)';
+  else if (node.hasClass('dormant')) here = 'DORMANT (TRAP)';
+  else if (node.hasClass('safe')) here = '✓ SAFE';
+  
   const agentList = agentsHere.length > 0
     ? agentsHere.map(a => `A${a.id}${a.byzantine ? ' [BYZ]' : ''}`).join(', ')
     : 'none';
