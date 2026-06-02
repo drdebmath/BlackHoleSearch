@@ -1,6 +1,4 @@
-// DOM helpers: stats, event log, agent chips, edge table, overlay, tabs.
-
-import { simState } from './state.js';
+import { simState, cyRef } from './state.js';
 
 export const $ = id => document.getElementById(id);
 
@@ -66,30 +64,36 @@ export function switchTab(name) {
   });
 }
 
+export function setupBBHUI() {
+  const modeSelect = $('bbhControlMode');
+  const nCont = $('bbhNContainer');
+  const mCont = $('bbhMContainer');
+
+  modeSelect.addEventListener('change', () => {
+    nCont.style.display = modeSelect.value === 'n-rounds' ? 'flex' : 'none';
+    mCont.style.display = modeSelect.value === 'm-agents' ? 'flex' : 'none';
+  });
+
+  $('advViewToggle').addEventListener('change', (e) => {
+    if (!cyRef.instance || !simState) return;
+    const bhNode = cyRef.instance.getElementById(`n${simState.bhNode}`);
+    if (e.target.checked) {
+      bhNode.addClass('revealed');
+    } else if (!simState.bhLocated) {
+      bhNode.removeClass('revealed');
+    }
+  });
+}
+
 export function updateFormula() {
   const f = +$('fFault').value;
-  const know = $('topoKnow').value;
-  const comm = $('commModel').value;
-
-  let k, time, alg;
-  if (know === 'known') {
-    k = 2 * f + 2;
-    time = 'O(n + f)';
-    alg = 'DFS+CCP';
-  } else if (comm === 'whiteboard') {
-    k = '(f+1)(∆+1)';
-    time = 'O(m + f)';
-    alg = 'DFS+CCP+WB';
-  } else {
-    k = '(f+1)(∆+1)+3f+1';
-    time = 'O(m·n + f)';
-    alg = 'DFS+CCP+MAP';
-  }
-
+  const k = Math.max(4, 2 * f + 2); // Dynamic fallback
+  
   $('formulaBox').innerHTML = `
-    <span class="hi">k ≥ ${typeof k === 'number' ? `<b>${k}</b>` : k}</span> agents needed<br>
-    Time: <span class="hi-g">${time}</span><br>
-    Algorithm: <span class="hi">${alg}</span><br>
+    <span class="hi">BBH adversarial activation (per-round)</span><br>
+    <span class="hi">k ≥ ${k}</span> agents needed<br>
+    Time: <span class="hi-g">O(n + f)</span><br>
+    Algorithm: <span class="hi">DFS+CCP</span><br>
     <span class="hi-r">f = ${f}</span> Byzantine fault(s)
   `;
 }
