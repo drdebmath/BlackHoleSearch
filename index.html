@@ -33,8 +33,9 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
 <div class="main">
 
   <div class="left-panel" id="simControls">
-    <div class="section-title">// GRAPH CONFIG</div>
-    <div class="controls">
+    <div class="config-scroll">
+      <div class="section-title">// GRAPH CONFIG</div>
+      <div class="controls">
 
       <label>
         GRAPH TOPOLOGY
@@ -105,10 +106,10 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
       <button class="btn btn-primary" id="runBtn" disabled>▶ RUN SIMULATION</button>
       <button class="btn btn-danger"  id="stepBtn" disabled>STEP →</button>
 
-    </div>
+      </div>
 
-    <div class="section-title">// ADVERSARY CONTROL</div>
-    <div class="controls" style="padding-top: 8px;">
+      <div class="section-title">// ADVERSARY CONTROL</div>
+      <div class="controls" style="padding-top: 8px;">
       
       <label style="flex-direction: row; align-items: center; cursor: pointer;">
         <input type="checkbox" id="advViewToggle">
@@ -138,6 +139,7 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         <input type="checkbox" id="bbhActiveNow">
         <span style="color: var(--danger); font-weight: bold;">BBH active now</span>
       </label>
+      </div>
     </div>
 
     <div class="legend">
@@ -230,6 +232,6 @@ themeToggle.onclick = () => {
 };
 syncThemeToggle();
 </script>
-<footer class="footer-credit">Developed by Vansh Gupta v1.8</footer>
+<footer class="footer-credit">Developed by Vansh Gupta v1.9</footer>
 </body>
 </html>

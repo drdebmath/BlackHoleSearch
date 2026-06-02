@@ -249,7 +249,11 @@ function prepareOperation(s, step) {
     }
   } else {
     const movers = s.agents.filter(a => a.alive && a.pos === step.from);
-    movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
+    if (step.kind === 'move' && s.safeNodes.has(step.to) && movers.length > 1) {
+      actions.push({ type: 'groupMove', agentIds: movers.map(agent => agent.id) });
+    } else {
+      movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
+    }
     if (movers.length === 0) {
       logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical DFS cursor to ${step.to}.`);
       actions.push({ type: 'markMoveOnly' });
@@ -285,6 +289,8 @@ export function stepSimulation() {
 
   if (action.type === 'move') {
     moveAgent(action.agentId, op.step.from, op.step.to);
+  } else if (action.type === 'groupMove') {
+    moveAgentGroup(action.agentIds, op.step.from, op.step.to);
   } else if (action.type === 'lose') {
     loseAgentToBlackHole(action.agentId, op.step.from, op.step.to);
   } else if (action.type === 'markDanger') {
@@ -323,6 +329,24 @@ function moveAgent(agentId, from, to) {
   s.currentNode = to;
   markCurrentNode(to);
   logAdd(s.round, agent.byzantine ? 'byz' : 'info', `A${agent.id} moves ${from}->${to} (${agent.byzantine ? 'Byzantine' : 'good'}).`);
+}
+
+function moveAgentGroup(agentIds, from, to) {
+  const s = simState;
+  const movers = agentIds
+    .map(agentId => s.agents.find(a => a.id === agentId))
+    .filter(agent => agent && agent.alive && agent.pos === from);
+
+  if (movers.length === 0) return;
+
+  movers.forEach(agent => {
+    agent.pos = to;
+  });
+  s.currentNode = to;
+  markCurrentNode(to);
+
+  const labels = movers.map(agent => `A${agent.id}`).join(', ');
+  logAdd(s.round, 'info', `Group move ${from}->${to}: ${labels} move together to confirmed safe node ${to}.`);
 }
 
 function loseAgentToBlackHole(agentId, from, to) {
