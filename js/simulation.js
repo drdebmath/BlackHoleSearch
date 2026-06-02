@@ -16,6 +16,7 @@ export function buildGraph() {
   const f    = +$('fFault').value;
   const comm = $('commModel').value;
   const know = $('topoKnow').value;
+  $('advViewToggle').checked = true;
 
   const { nodes, edges } = generateGraph(topo, n);
   initCy(nodes, edges);
@@ -76,10 +77,7 @@ export function buildGraph() {
 
   cy.getElementById('n' + homebase).addClass('homebase');
   
-  // Only reveal if Adversary View is on
-  if ($('advViewToggle').checked) {
-    cy.getElementById('n' + bhNode).addClass('revealed');
-  }
+  cy.getElementById('n' + bhNode).addClass('revealed');
 
   updateAgentChips();
   updateEdgeTable();
@@ -251,6 +249,11 @@ function prepareOperation(s, step) {
     const movers = s.agents.filter(a => a.alive && a.pos === step.from);
     if (step.kind === 'move' && s.safeNodes.has(step.to) && movers.length > 1) {
       actions.push({ type: 'groupMove', agentIds: movers.map(agent => agent.id) });
+    } else if (step.classify && movers.length > s.f + 1) {
+      const confirmingAgents = movers.slice(0, s.f + 1);
+      const remainingAgents = movers.slice(s.f + 1);
+      confirmingAgents.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
+      actions.push({ type: 'confirmAndGroupMove', agentIds: remainingAgents.map(agent => agent.id) });
     } else {
       movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
     }
@@ -291,6 +294,9 @@ export function stepSimulation() {
     moveAgent(action.agentId, op.step.from, op.step.to);
   } else if (action.type === 'groupMove') {
     moveAgentGroup(action.agentIds, op.step.from, op.step.to);
+  } else if (action.type === 'confirmAndGroupMove') {
+    certifySafeTraversal(op);
+    moveAgentGroup(action.agentIds, op.step.from, op.step.to, true);
   } else if (action.type === 'lose') {
     loseAgentToBlackHole(action.agentId, op.step.from, op.step.to);
   } else if (action.type === 'markDanger') {
@@ -331,7 +337,7 @@ function moveAgent(agentId, from, to) {
   logAdd(s.round, agent.byzantine ? 'byz' : 'info', `A${agent.id} moves ${from}->${to} (${agent.byzantine ? 'Byzantine' : 'good'}).`);
 }
 
-function moveAgentGroup(agentIds, from, to) {
+function moveAgentGroup(agentIds, from, to, afterConfirmation = false) {
   const s = simState;
   const movers = agentIds
     .map(agentId => s.agents.find(a => a.id === agentId))
@@ -346,7 +352,8 @@ function moveAgentGroup(agentIds, from, to) {
   markCurrentNode(to);
 
   const labels = movers.map(agent => `A${agent.id}`).join(', ');
-  logAdd(s.round, 'info', `Group move ${from}->${to}: ${labels} move together to confirmed safe node ${to}.`);
+  const context = afterConfirmation ? 'remaining agents' : 'agents';
+  logAdd(s.round, 'info', `Group move ${from}->${to}: ${context} ${labels} move together to confirmed safe node ${to}.`);
 }
 
 function loseAgentToBlackHole(agentId, from, to) {
@@ -364,7 +371,7 @@ function loseAgentToBlackHole(agentId, from, to) {
 
 function completeOperation(op) {
   const s = simState;
-  const { from, to, classify, label } = op.step;
+  const { from, to } = op.step;
   const key = edgeKey(from, to);
   const cyEdge = getCyEdge(from, to);
   
@@ -382,17 +389,25 @@ function completeOperation(op) {
   }
 
   s.currentNode = to;
-  if (classify && s.edgeStatus[key] === 'unknown') {
-    s.edgeStatus[key] = 'safe';
-    s.safeNodes.add(from);
-    s.safeNodes.add(to);
-    s.visitedNodes.add(to);
-    cyEdge.addClass('safe');
-    cyRef.instance.getElementById(`n${to}`).addClass('safe');
-    cyRef.instance.getElementById(`n${from}`).addClass('safe');
-    maybeIdentifyByzantine(from, to);
-    logAdd(s.round, 'safe', `${label}: edge (${from}->${to}) certified SAFE after sequential CCP movement.`);
-  }
+  certifySafeTraversal(op);
+}
+
+function certifySafeTraversal(op) {
+  const s = simState;
+  const { from, to, classify, label } = op.step;
+  const key = edgeKey(from, to);
+
+  if (!classify || s.edgeStatus[key] !== 'unknown') return;
+
+  s.edgeStatus[key] = 'safe';
+  s.safeNodes.add(from);
+  s.safeNodes.add(to);
+  s.visitedNodes.add(to);
+  getCyEdge(from, to).addClass('safe');
+  cyRef.instance.getElementById(`n${to}`).addClass('safe');
+  cyRef.instance.getElementById(`n${from}`).addClass('safe');
+  maybeIdentifyByzantine(from, to);
+  logAdd(s.round, 'safe', `${label}: edge (${from}->${to}) certified SAFE after sequential CCP movement.`);
 }
 
 function maybeIdentifyByzantine(from, to) {
