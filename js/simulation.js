@@ -429,7 +429,8 @@ function prepareOperation(s, step) {
     logAdd(s.round, 'info', `CCP starts on edge (${step.from}->${step.to}) for ${reason}. Pattern: f+1 probe out, wait, return, then cascade until a strict majority decides.`);
 
     const probeState = {
-      strictMajority: Math.floor((s.f + 1) / 2) + 1,
+      // FIX #1: The threshold must strictly be f + 1 to ensure at least one good agent verifies it.
+      strictMajority: s.f + 1, 
       probeAttempts: new Map(),
       allProbeAgentIds: probeAgents.map(agent => agent.id),
       extraProbes: 0,
@@ -699,12 +700,19 @@ function maybeIdentifyByzantine(from, to) {
   logAdd(s.round, 'byz', `Byzantine agent A${byz.id} identified via CCP behavior on edge (${from}->${to})!`);
 }
 
+// FIX #2: Force agents to map all edges in the Unknown Map scenario.
 function shouldFinish(s) {
   if (s.currentOperation) return false;
+  if (s.know === 'unknown') {
+    return s.bhLocated && allEdgesClassified(s);
+  }
   return s.bhLocated;
 }
 
 function finishWasSuccessful(s) {
+  if (s.know === 'unknown') {
+    return s.bhLocated && allEdgesClassified(s);
+  }
   return s.bhLocated;
 }
 
@@ -751,7 +759,9 @@ function finishSim(success) {
 
   const survivors = s.agents.filter(a => a.alive && !a.byzantine).length;
   if (success) {
-    const modeNote = 'Continuous re-exploration stopped after locating the black hole.';
+    const modeNote = s.know === 'unknown' 
+      ? 'Entire map classified and BH located.' 
+      : 'Continuous re-exploration stopped after locating the black hole.';
     logAdd(s.round, 'system', `BH LOCATED at node ${s.bhNode}`);
     logAdd(s.round, 'safe', `${survivors} good agent(s) survived. ${s.lostInBH} lost in BH. ${modeNote}`);
     showOverlay('success', 'BLACK HOLE LOCATED',
