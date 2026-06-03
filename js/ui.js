@@ -38,10 +38,22 @@ export function updateEdgeTable() {
   const table = $('edgeTable');
   table.innerHTML = '';
   for (const [key, status] of Object.entries(simState.edgeStatus)) {
-    const cls = status === 'safe' ? 'safe' : status === 'dangerous' ? 'danger' : 'unknown';
+    const cls = status === 'safe'
+      ? 'safe'
+      : status === 'dangerous'
+        ? 'danger'
+        : status === 'expired'
+          ? 'expired'
+          : 'unknown';
+    const memory = simState.edgeMemory?.[key];
+    const expiry = status === 'safe' && Number.isFinite(memory?.expiresAt)
+      ? `<span class="edge-expiry">R${memory.expiresAt}</span>`
+      : status === 'expired'
+        ? '<span class="edge-expiry">RE-PROBE</span>'
+        : '';
     const row = document.createElement('div');
     row.className = 'edge-row';
-    row.innerHTML = `<span>${key}</span><span class="status-${cls}">${status.toUpperCase()}</span>`;
+    row.innerHTML = `<span>${key}</span><span class="edge-state"><span class="status-${cls}">${status.toUpperCase()}</span>${expiry}</span>`;
     table.appendChild(row);
   }
 }
@@ -88,12 +100,14 @@ export function setupBBHUI() {
 export function updateFormula() {
   const f = +$('fFault').value;
   const k = Math.max(4, 2 * f + 2); // Dynamic fallback
+  const ttl = $('memoryTTL') ? +$('memoryTTL').value : 8;
   
   $('formulaBox').innerHTML = `
     <span class="hi">BBH adversarial activation (per-round)</span><br>
     <span class="hi">k ≥ ${k}</span> agents needed<br>
     Time: <span class="hi-g">O(n + f)</span><br>
-    Algorithm: <span class="hi">DFS+CCP</span><br>
+    Algorithm: <span class="hi">DFS+CCP+DECAY</span><br>
+    Safe memory TTL: <span class="hi-g">${ttl}</span> round(s)<br>
     <span class="hi-r">f = ${f}</span> Byzantine fault(s)
   `;
 }

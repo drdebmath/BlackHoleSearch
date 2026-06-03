@@ -99,6 +99,11 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         </select>
       </label>
 
+      <label>
+        SAFE MEMORY TTL — <span class="val-display" id="memoryTtlVal">8</span>
+        <input type="range" id="memoryTTL" min="4" max="24" value="8">
+      </label>
+
       <div class="btn-row">
         <button class="btn btn-primary" id="buildBtn">BUILD GRAPH</button>
         <button class="btn btn-warn"    id="resetBtn">RESET</button>
@@ -150,6 +155,7 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
       <div class="legend-item"><div class="dot dot-safe"></div>SAFE NODE</div>
       <div class="legend-item"><div class="dot dot-home"></div>HOMEBASE</div>
       <div class="legend-item"><div class="dot dot-unexplored"></div>UNEXPLORED</div>
+      <div class="legend-item"><div class="dot dot-expired"></div>EXPIRED EDGE</div>
     </div>
   </div>
 
@@ -189,6 +195,10 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
       <div class="stat-cell">
         <div class="stat-label">EDGES DANGER</div>
         <div class="stat-val sv-red" id="sEdgeDanger">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">EDGES EXPIRED</div>
+        <div class="stat-val sv-yellow" id="sEdgeExpired">0</div>
       </div>
     </div>
 

@@ -4,6 +4,7 @@ import { $, updateFormula, closeOverlay, switchTab, setupBBHUI } from './ui.js';
 
 const nNodes  = $('nNodes');
 const fFault  = $('fFault');
+const memoryTTL = $('memoryTTL');
 const runBtn  = $('runBtn');
 const panelToggle = $('panelToggle');
 const panelStoreKey = 'bhs-panels-collapsed';
@@ -59,6 +60,7 @@ window.addEventListener('resize', refreshGraphViewport);
 
 nNodes.oninput = () => { $('nVal').textContent = nNodes.value; updateFormula(); };
 fFault.oninput = () => { $('fVal').textContent = fFault.value; updateFormula(); };
+memoryTTL.oninput = () => { $('memoryTtlVal').textContent = memoryTTL.value; updateFormula(); };
 $('topoKnow').onchange = updateFormula;
 $('commModel').onchange = updateFormula;
 $('simMode').onchange = updateFormula;

@@ -100,6 +100,7 @@ const STYLE = [
     },
   },
   { selector: 'edge.safe',      style: { 'line-color': '#00e676', 'width': 3, 'opacity': 0.7 } },
+  { selector: 'edge.expired',   style: { 'line-color': '#ffb700', 'width': 3, 'line-style': 'dotted', 'opacity': 0.85 } },
   { selector: 'edge.dangerous', style: { 'line-color': '#ff3d5a', 'width': 3, 'line-style': 'dashed' } },
   { selector: 'edge.probing',   style: { 'line-color': '#ffb700', 'width': 3, 'line-style': 'dashed' } },
 ];

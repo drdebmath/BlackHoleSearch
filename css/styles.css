@@ -312,6 +312,7 @@ select:focus { border-color: var(--accent); }
 .dot-safe { background: var(--safe); }
 .dot-home { background: var(--warn); border-radius: 0; }
 .dot-unexplored { background: var(--dim); }
+.dot-expired { background: var(--warn); border-radius: 0; }
 
 /* ── GRAPH AREA ── */
 .graph-area {
@@ -560,13 +561,25 @@ body.panels-collapsed .right-panel {
 .edge-row {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   padding: 3px 6px;
   border-bottom: 1px solid rgba(30, 37, 48, 0.5);
 }
 .edge-row:hover { background: rgba(0, 229, 255, 0.04); }
+.edge-state {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+.edge-expiry {
+  color: var(--dim);
+  font-size: 9px;
+}
 .status-safe    { color: var(--safe); }
 .status-danger  { color: var(--danger); }
 .status-unknown { color: var(--dim); }
+.status-expired { color: var(--warn); }
 
 .mode-indicator {
   font-family: var(--font-mono);
