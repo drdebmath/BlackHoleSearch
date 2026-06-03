@@ -82,13 +82,13 @@ export function buildGraph() {
     maintenanceCycle: 0,
     maintenanceLogged: false,
   };
+  
   state.traversalOrder = know === 'known'
     ? buildKnownDFSPlan(state)
     : buildUnknownDFSPlan(state);
   setSimState(state);
 
   cy.getElementById('n' + homebase).addClass('homebase');
-  
   cy.getElementById('n' + bhNode).addClass('revealed');
 
   updateAgentChips();
@@ -185,8 +185,9 @@ function buildKnownDFSPlan(state) {
   return plan;
 }
 
+// 100% blind DFS tree building. Doesn't peek at the Black Hole location.
 function buildUnknownDFSPlan(state) {
-  const { homebase, bhNode, ports } = state;
+  const { homebase, ports } = state; 
   const visitedNodes = new Set([homebase]);
   const exploredEdges = new Set();
   const plan = [];
@@ -196,12 +197,6 @@ function buildUnknownDFSPlan(state) {
       const key = edgeKey(u, v);
       if (exploredEdges.has(key)) continue;
       exploredEdges.add(key);
-
-      if (v === bhNode) {
-        plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'BH boundary probe' });
-        plan.push({ kind: 'move', from: v, to: u, classify: false, label: 'Return after boundary probe' });
-        continue;
-      }
 
       if (!visitedNodes.has(v)) {
         visitedNodes.add(v);
@@ -282,16 +277,17 @@ function findReserveProbeAgent(s, op) {
   return s.agents.find(agent => agent.alive && agent.pos === op.step.from && !used.has(agent.id));
 }
 
+// Queues up the next single agent for a sequential 1-by-1 probe cascade
 function appendCascadeProbeActions(s, op, reserve) {
   if (!reserve || !op.probeState) return;
   op.probeState.extraProbes += 1;
   op.probeState.allProbeAgentIds.push(reserve.id);
   op.probeState.probeAttempts.set(reserve.id, 'pending');
-  op.actions.push({ type: 'probeOut', agentId: reserve.id, phase: 'cascade' });
-  op.actions.push({ type: 'waitRound', reason: 'cascade probe wait' });
-  op.actions.push({ type: 'probeBack', agentId: reserve.id, phase: 'cascade' });
+  op.actions.push({ type: 'probeOut', agentId: reserve.id, phase: '1-by-1' });
+  op.actions.push({ type: 'waitRound', reason: 'probe wait' });
+  op.actions.push({ type: 'probeBack', agentId: reserve.id, phase: '1-by-1' });
   op.actions.push({ type: 'evaluateProbeOutcome' });
-  logAdd(s.round, 'info', `Cascade probe on edge (${op.step.from}->${op.step.to}) with reserve agent A${reserve.id}.`);
+  logAdd(s.round, 'info', `Continuing 1-by-1 CCP on edge (${op.step.from}->${op.step.to}) with next agent A${reserve.id}.`);
 }
 
 function evaluateProbeOutcome(s, op) {
@@ -301,7 +297,7 @@ function evaluateProbeOutcome(s, op) {
   const lost = results.filter(r => r === 'lost').length;
   const threshold = op.probeState.strictMajority;
 
-  logAdd(s.round, 'info', `Probe outcome on edge (${op.step.from}->${op.step.to}): ${returned} returned, ${lost} lost, threshold ${threshold}.`);
+  logAdd(s.round, 'info', `Probe outcome on edge (${op.step.from}->${op.step.to}): ${returned} returned, ${lost} lost. (Threshold for safety/danger: ${threshold}).`);
 
   if (returned >= threshold) {
     op.certified = true;
@@ -310,14 +306,14 @@ function evaluateProbeOutcome(s, op) {
   }
 
   if (lost >= threshold) {
-    op.losses = 1;
+    op.losses = lost;
     return;
   }
 
   const reserve = findReserveProbeAgent(s, op);
   if (!reserve) {
-    logAdd(s.round, 'warn', `No reserve agent available to continue cascading probe on edge (${op.step.from}->${op.step.to}); defaulting to DANGEROUS.`);
-    op.losses = 1;
+    logAdd(s.round, 'warn', `No reserve agent available to continue 1-by-1 probe on edge (${op.step.from}->${op.step.to}); defaulting to DANGEROUS.`);
+    op.losses = lost > 0 ? lost : 1;
     return;
   }
 
@@ -418,38 +414,31 @@ function prepareOperation(s, step) {
   }
 
   if (movers.length === 0) {
+    // Crucial for the Unknown map DFS: When an edge kills agents, they aren't there to process the next recursive steps, safely skipping unreachable parts of the graph.
     logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical cursor to ${step.to}.`);
     actions.push({ type: 'markMoveOnly' });
     return { step, actions, index: 0, losses: 0, requiresProbe: false, certified: false };
   }
 
   if (requiresProbe) {
-    const probeAgents = movers.slice(0, Math.min(movers.length, s.f + 1));
+    const firstAgent = movers[0];
     const reason = edgeState === 'expired' ? 'expired memory' : 'uncertified edge';
-    logAdd(s.round, 'info', `CCP starts on edge (${step.from}->${step.to}) for ${reason}. Pattern: f+1 probe out, wait, return, then cascade until a strict majority decides.`);
+    logAdd(s.round, 'info', `CCP starts on edge (${step.from}->${step.to}) for ${reason}. Pattern: send ONE agent, wait, return, repeat until strict majority (${s.f + 1}) decides.`);
 
     const probeState = {
-      // FIX #1: The threshold must strictly be f + 1 to ensure at least one good agent verifies it.
-      strictMajority: s.f + 1, 
+      strictMajority: s.f + 1,
       probeAttempts: new Map(),
-      allProbeAgentIds: probeAgents.map(agent => agent.id),
+      allProbeAgentIds: [firstAgent.id],
       extraProbes: 0,
       decision: null,
     };
 
-    probeAgents.forEach(agent => {
-      probeState.probeAttempts.set(agent.id, 'pending');
-      actions.push({ type: 'probeOut', agentId: agent.id, phase: 'initial' });
-    });
-    actions.push({ type: 'waitRound', reason: 'initial probe wait' });
-    probeAgents.forEach(agent => {
-      actions.push({ type: 'probeBack', agentId: agent.id, phase: 'initial' });
-    });
-    actions.push({ type: 'evaluateProbeOutcome' });
+    probeState.probeAttempts.set(firstAgent.id, 'pending');
 
-    if (probeAgents.length < s.f + 1) {
-      logAdd(s.round, 'warn', `Only ${probeAgents.length} agent(s) available for the required f+1=${s.f + 1} CCP probe threshold.`);
-    }
+    actions.push({ type: 'probeOut', agentId: firstAgent.id, phase: '1-by-1' });
+    actions.push({ type: 'waitRound', reason: 'initial probe wait' });
+    actions.push({ type: 'probeBack', agentId: firstAgent.id, phase: '1-by-1' });
+    actions.push({ type: 'evaluateProbeOutcome' });
 
     return {
       step: { ...step, classify: requiresProbe },
@@ -604,7 +593,7 @@ function loseAgentToBlackHole(agentId, from, to) {
   s.lostInBH++;
   s.currentNode = from;
   markCurrentNode(from);
-  logAdd(s.round, 'danger', `A${agent.id} enters ${from}->${to} and is lost in the black hole (${s.lostInBH}/${s.f + 1}).`);
+  logAdd(s.round, 'danger', `A${agent.id} enters ${from}->${to} and is lost in the black hole (${s.lostInBH} agents lost overall).`);
   return true;
 }
 
@@ -644,7 +633,14 @@ function markDangerousEdge(op) {
   s.currentNode = from === s.bhNode ? to : from;
   getCyEdge(from, to).removeClass('safe expired probing').addClass('dangerous');
   cyRef.instance.getElementById(`n${s.bhNode}`).removeClass('blackhole').addClass('revealed');
-  logAdd(s.round, 'danger', `CCP on edge (${from}->${to}): BLACK HOLE DETECTED. Total BH losses: ${s.lostInBH}.`);
+  
+  const remainingUnknown = Object.values(s.edgeStatus).filter(v => v === 'unknown').length;
+  if (s.know === 'unknown' && remainingUnknown > 0) {
+    logAdd(s.round, 'danger', `CCP on edge (${from}->${to}): BLACK HOLE EDGE DETECTED! (${s.lostInBH} agents lost total).`);
+    logAdd(s.round, 'warn', `UNKNOWN MAP MODE: ${remainingUnknown} edge(s) still unclassified. Swarm MUST continue exploring from other sides!`);
+  } else {
+    logAdd(s.round, 'danger', `CCP on edge (${from}->${to}): BLACK HOLE DETECTED. Total BH losses: ${s.lostInBH}.`);
+  }
 }
 
 function certifySafeTraversal(op) {
@@ -700,7 +696,6 @@ function maybeIdentifyByzantine(from, to) {
   logAdd(s.round, 'byz', `Byzantine agent A${byz.id} identified via CCP behavior on edge (${from}->${to})!`);
 }
 
-// FIX #2: Force agents to map all edges in the Unknown Map scenario.
 function shouldFinish(s) {
   if (s.currentOperation) return false;
   if (s.know === 'unknown') {
@@ -760,8 +755,8 @@ function finishSim(success) {
   const survivors = s.agents.filter(a => a.alive && !a.byzantine).length;
   if (success) {
     const modeNote = s.know === 'unknown' 
-      ? 'Entire map classified and BH located.' 
-      : 'Continuous re-exploration stopped after locating the black hole.';
+      ? 'Entire map classified and BH verified from all connecting paths.' 
+      : 'Simulation stopped immediately after locating the black hole (Known Map).';
     logAdd(s.round, 'system', `BH LOCATED at node ${s.bhNode}`);
     logAdd(s.round, 'safe', `${survivors} good agent(s) survived. ${s.lostInBH} lost in BH. ${modeNote}`);
     showOverlay('success', 'BLACK HOLE LOCATED',
