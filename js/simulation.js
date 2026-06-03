@@ -271,6 +271,59 @@ function nextPlannedStep(s) {
   return { step: buildMaintenanceStep(s), fromTraversal: false };
 }
 
+function recordProbeOutcome(op, agentId, returned) {
+  if (!op.probeState) return;
+  if (!op.probeState.probeAttempts.has(agentId)) return;
+  op.probeState.probeAttempts.set(agentId, returned ? 'returned' : 'lost');
+}
+
+function findReserveProbeAgent(s, op) {
+  const used = new Set(op.probeState?.allProbeAgentIds || []);
+  return s.agents.find(agent => agent.alive && agent.pos === op.step.from && !used.has(agent.id));
+}
+
+function appendCascadeProbeActions(s, op, reserve) {
+  if (!reserve || !op.probeState) return;
+  op.probeState.extraProbes += 1;
+  op.probeState.allProbeAgentIds.push(reserve.id);
+  op.probeState.probeAttempts.set(reserve.id, 'pending');
+  op.actions.push({ type: 'probeOut', agentId: reserve.id, phase: 'cascade' });
+  op.actions.push({ type: 'waitRound', reason: 'cascade probe wait' });
+  op.actions.push({ type: 'probeBack', agentId: reserve.id, phase: 'cascade' });
+  op.actions.push({ type: 'evaluateProbeOutcome' });
+  logAdd(s.round, 'info', `Cascade probe on edge (${op.step.from}->${op.step.to}) with reserve agent A${reserve.id}.`);
+}
+
+function evaluateProbeOutcome(s, op) {
+  if (!op.probeState) return;
+  const results = Array.from(op.probeState.probeAttempts.values());
+  const returned = results.filter(r => r === 'returned').length;
+  const lost = results.filter(r => r === 'lost').length;
+  const threshold = op.probeState.strictMajority;
+
+  logAdd(s.round, 'info', `Probe outcome on edge (${op.step.from}->${op.step.to}): ${returned} returned, ${lost} lost, threshold ${threshold}.`);
+
+  if (returned >= threshold) {
+    op.certified = true;
+    op.actions.push({ type: 'certifyAndGroupMove', agentIds: s.agents.filter(a => a.alive && a.pos === op.step.from).map(a => a.id) });
+    return;
+  }
+
+  if (lost >= threshold) {
+    op.losses = 1;
+    return;
+  }
+
+  const reserve = findReserveProbeAgent(s, op);
+  if (!reserve) {
+    logAdd(s.round, 'warn', `No reserve agent available to continue cascading probe on edge (${op.step.from}->${op.step.to}); defaulting to DANGEROUS.`);
+    op.losses = 1;
+    return;
+  }
+
+  appendCascadeProbeActions(s, op, reserve);
+}
+
 function buildMaintenanceStep(s) {
   const targetKey = chooseMaintenanceEdge(s);
   if (!targetKey) return null;
@@ -373,18 +426,39 @@ function prepareOperation(s, step) {
   if (requiresProbe) {
     const probeAgents = movers.slice(0, Math.min(movers.length, s.f + 1));
     const reason = edgeState === 'expired' ? 'expired memory' : 'uncertified edge';
-    logAdd(s.round, 'info', `CCP starts on edge (${step.from}->${step.to}) for ${reason}. Pattern: probe out, return, verify, then certify.`);
+    logAdd(s.round, 'info', `CCP starts on edge (${step.from}->${step.to}) for ${reason}. Pattern: f+1 probe out, wait, return, then cascade until a strict majority decides.`);
 
-    probeAgents.forEach((agent, index) => {
-      const phase = index + 1;
-      actions.push({ type: 'probeOut', agentId: agent.id, phase });
-      actions.push({ type: 'probeBack', agentId: agent.id, phase });
+    const probeState = {
+      strictMajority: Math.floor((s.f + 1) / 2) + 1,
+      probeAttempts: new Map(),
+      allProbeAgentIds: probeAgents.map(agent => agent.id),
+      extraProbes: 0,
+      decision: null,
+    };
+
+    probeAgents.forEach(agent => {
+      probeState.probeAttempts.set(agent.id, 'pending');
+      actions.push({ type: 'probeOut', agentId: agent.id, phase: 'initial' });
     });
-    actions.push({ type: 'certifyAndGroupMove', agentIds: movers.map(agent => agent.id) });
+    actions.push({ type: 'waitRound', reason: 'initial probe wait' });
+    probeAgents.forEach(agent => {
+      actions.push({ type: 'probeBack', agentId: agent.id, phase: 'initial' });
+    });
+    actions.push({ type: 'evaluateProbeOutcome' });
 
     if (probeAgents.length < s.f + 1) {
       logAdd(s.round, 'warn', `Only ${probeAgents.length} agent(s) available for the required f+1=${s.f + 1} CCP probe threshold.`);
     }
+
+    return {
+      step: { ...step, classify: requiresProbe },
+      actions,
+      index: 0,
+      losses: 0,
+      requiresProbe,
+      certified: false,
+      probeState,
+    };
   } else if (movers.length > 1) {
     actions.push({ type: 'groupMove', agentIds: movers.map(agent => agent.id) });
   } else {
@@ -436,10 +510,15 @@ export function stepSimulation() {
   } else if (action.type === 'probeOut') {
     moveAgent(action.agentId, op.step.from, op.step.to, `CCP probe ${action.phase} out`);
   } else if (action.type === 'probeBack') {
-    moveAgent(action.agentId, op.step.to, op.step.from, `CCP probe ${action.phase} returns`);
+    const returned = moveAgent(action.agentId, op.step.to, op.step.from, `CCP probe ${action.phase} returns`);
+    recordProbeOutcome(op, action.agentId, Boolean(returned));
   } else if (action.type === 'certifyAndGroupMove') {
     certifySafeTraversal(op);
     moveAgentGroup(action.agentIds, op.step.from, op.step.to, true);
+  } else if (action.type === 'waitRound') {
+    logAdd(s.round, 'info', `Waiting one round for probe results on edge (${op.step.from}->${op.step.to}).`);
+  } else if (action.type === 'evaluateProbeOutcome') {
+    evaluateProbeOutcome(s, op);
   } else if (action.type === 'markDanger') {
     logAdd(s.round, 'danger', `Edge (${op.step.from}->${op.step.to}) borders the known black hole; marked DANGEROUS without another loss.`);
   } else if (action.type === 'markMoveOnly') {
