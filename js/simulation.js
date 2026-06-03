@@ -107,7 +107,7 @@ export function buildGraph() {
   logAdd(0, 'system', `Graph built: ${n} nodes, ${edges.length} edges, Delta=${delta}`);
   logAdd(0, 'system', `Byzantine Black Hole (BBH) at node ${bhNode} (hidden from agents)`);
   logAdd(0, 'system', `Team: k=${k} agents, f=${f} Byzantine`);
-  logAdd(0, 'system', `Algorithm: ${know === 'known' ? 'WhiteboardMap/ProbeMap' : 'WhiteboardWithoutMap/ProbeWithoutMap'}`);
+  logAdd(0, 'system', `Algorithm: ${know === 'known' ? 'WhiteboardMap' : 'WhiteboardWithoutMap'}`);
   logAdd(0, 'info', `Homebase: node ${homebase}. DFS traversal plan ready; safe edge memory expires after ${memoryTTL} rounds.`);
 
   $('runBtn').disabled  = false;
@@ -185,7 +185,6 @@ function buildKnownDFSPlan(state) {
   return plan;
 }
 
-// 100% blind DFS tree building. Doesn't peek at the Black Hole location.
 function buildUnknownDFSPlan(state) {
   const { homebase, ports } = state; 
   const visitedNodes = new Set([homebase]);
@@ -260,64 +259,31 @@ function nextPlannedStep(s) {
 
   if (!s.maintenanceLogged) {
     s.maintenanceLogged = true;
-    logAdd(s.round, 'system', 'Initial DFS plan exhausted; entering continuous re-exploration loop.');
+    logAdd(s.round, 'system', 'Initial DFS plan exhausted; entering continuous re-exploration loop to map remaining unknown edges.');
   }
 
   return { step: buildMaintenanceStep(s), fromTraversal: false };
 }
 
-function recordProbeOutcome(op, agentId, returned) {
-  if (!op.probeState) return;
-  if (!op.probeState.probeAttempts.has(agentId)) return;
-  op.probeState.probeAttempts.set(agentId, returned ? 'returned' : 'lost');
-}
-
-function findReserveProbeAgent(s, op) {
-  const used = new Set(op.probeState?.allProbeAgentIds || []);
-  return s.agents.find(agent => agent.alive && agent.pos === op.step.from && !used.has(agent.id));
-}
-
-// Queues up the next single agent for a sequential 1-by-1 probe cascade
-function appendCascadeProbeActions(s, op, reserve) {
-  if (!reserve || !op.probeState) return;
-  op.probeState.extraProbes += 1;
-  op.probeState.allProbeAgentIds.push(reserve.id);
-  op.probeState.probeAttempts.set(reserve.id, 'pending');
-  op.actions.push({ type: 'probeOut', agentId: reserve.id, phase: '1-by-1' });
-  op.actions.push({ type: 'waitRound', reason: 'probe wait' });
-  op.actions.push({ type: 'probeBack', agentId: reserve.id, phase: '1-by-1' });
-  op.actions.push({ type: 'evaluateProbeOutcome' });
-  logAdd(s.round, 'info', `Continuing 1-by-1 CCP on edge (${op.step.from}->${op.step.to}) with next agent A${reserve.id}.`);
-}
-
-function evaluateProbeOutcome(s, op) {
-  if (!op.probeState) return;
-  const results = Array.from(op.probeState.probeAttempts.values());
-  const returned = results.filter(r => r === 'returned').length;
-  const lost = results.filter(r => r === 'lost').length;
-  const threshold = op.probeState.strictMajority;
-
-  logAdd(s.round, 'info', `Probe outcome on edge (${op.step.from}->${op.step.to}): ${returned} returned, ${lost} lost. (Threshold for safety/danger: ${threshold}).`);
-
-  if (returned >= threshold) {
-    op.certified = true;
-    op.actions.push({ type: 'certifyAndGroupMove', agentIds: s.agents.filter(a => a.alive && a.pos === op.step.from).map(a => a.id) });
-    return;
-  }
-
-  if (lost >= threshold) {
-    op.losses = lost;
-    return;
-  }
-
-  const reserve = findReserveProbeAgent(s, op);
+// STRICT 1-BY-1 PROBE DYNAMIC QUEUEING
+function queueNextSequentialProbe(s, op) {
+  const reserve = s.agents.find(a => a.alive && a.pos === op.step.from && !op.probeState.usedAgents.has(a.id));
+  
   if (!reserve) {
-    logAdd(s.round, 'warn', `No reserve agent available to continue 1-by-1 probe on edge (${op.step.from}->${op.step.to}); defaulting to DANGEROUS.`);
-    op.losses = lost > 0 ? lost : 1;
+    logAdd(s.round, 'warn', `No reserve agents available at node ${op.step.from} to continue 1-by-1 probe. Defaulting to DANGEROUS.`);
+    op.losses = op.probeState.lostCount > 0 ? op.probeState.lostCount : 1;
     return;
   }
 
-  appendCascadeProbeActions(s, op, reserve);
+  op.probeState.usedAgents.add(reserve.id);
+  
+  // Dynamically inject exactly 4 actions for THIS agent only, directly ahead of the execution cursor.
+  op.actions.splice(op.index, 0,
+    { type: 'probeOut', agentId: reserve.id },
+    { type: 'waitRound', agentId: reserve.id },
+    { type: 'probeBack', agentId: reserve.id },
+    { type: 'evaluateProbeOutcome' }
+  );
 }
 
 function buildMaintenanceStep(s) {
@@ -346,8 +312,6 @@ function buildMaintenanceStep(s) {
       maintenance: true,
     };
   }
-
-  logAdd(s.round, 'warn', `No non-dangerous route is currently available to refresh edge ${targetKey}.`);
   return null;
 }
 
@@ -414,31 +378,24 @@ function prepareOperation(s, step) {
   }
 
   if (movers.length === 0) {
-    // Crucial for the Unknown map DFS: When an edge kills agents, they aren't there to process the next recursive steps, safely skipping unreachable parts of the graph.
     logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical cursor to ${step.to}.`);
     actions.push({ type: 'markMoveOnly' });
     return { step, actions, index: 0, losses: 0, requiresProbe: false, certified: false };
   }
 
   if (requiresProbe) {
-    const firstAgent = movers[0];
     const reason = edgeState === 'expired' ? 'expired memory' : 'uncertified edge';
-    logAdd(s.round, 'info', `CCP starts on edge (${step.from}->${step.to}) for ${reason}. Pattern: send ONE agent, wait, return, repeat until strict majority (${s.f + 1}) decides.`);
+    logAdd(s.round, 'info', `Starting STRICT 1-by-1 CCP on edge (${step.from}->${step.to}) for ${reason}. (Threshold: ${s.f + 1})`);
 
     const probeState = {
-      strictMajority: s.f + 1,
-      probeAttempts: new Map(),
-      allProbeAgentIds: [firstAgent.id],
-      extraProbes: 0,
-      decision: null,
+      threshold: s.f + 1,
+      returnedCount: 0,
+      lostCount: 0,
+      usedAgents: new Set()
     };
 
-    probeState.probeAttempts.set(firstAgent.id, 'pending');
-
-    actions.push({ type: 'probeOut', agentId: firstAgent.id, phase: '1-by-1' });
-    actions.push({ type: 'waitRound', reason: 'initial probe wait' });
-    actions.push({ type: 'probeBack', agentId: firstAgent.id, phase: '1-by-1' });
-    actions.push({ type: 'evaluateProbeOutcome' });
+    // Kick off the strict 1-by-1 loop
+    actions.push({ type: 'startSequentialProbe' });
 
     return {
       step: { ...step, classify: requiresProbe },
@@ -497,20 +454,33 @@ export function stepSimulation() {
     moveAgent(action.agentId, op.step.from, op.step.to, 'moves across certified edge');
   } else if (action.type === 'groupMove') {
     moveAgentGroup(action.agentIds, op.step.from, op.step.to);
+  } else if (action.type === 'startSequentialProbe') {
+    queueNextSequentialProbe(s, op);
   } else if (action.type === 'probeOut') {
-    moveAgent(action.agentId, op.step.from, op.step.to, `CCP probe ${action.phase} out`);
+    moveAgent(action.agentId, op.step.from, op.step.to, `1-by-1 probe OUT`);
+  } else if (action.type === 'waitRound') {
+    logAdd(s.round, 'info', `Waiting one round for Agent A${action.agentId} probe results...`);
   } else if (action.type === 'probeBack') {
-    const returned = moveAgent(action.agentId, op.step.to, op.step.from, `CCP probe ${action.phase} returns`);
-    recordProbeOutcome(op, action.agentId, Boolean(returned));
+    const returned = moveAgent(action.agentId, op.step.to, op.step.from, `1-by-1 probe RETURNS`);
+    if (returned) {
+      op.probeState.returnedCount++;
+      logAdd(s.round, 'safe', `Agent A${action.agentId} returned safely. (Returns: ${op.probeState.returnedCount}/${op.probeState.threshold})`);
+    } else {
+      op.probeState.lostCount++;
+      logAdd(s.round, 'danger', `Agent A${action.agentId} LOST. (Losses: ${op.probeState.lostCount}/${op.probeState.threshold})`);
+    }
+  } else if (action.type === 'evaluateProbeOutcome') {
+    if (op.probeState.returnedCount >= op.probeState.threshold) {
+      op.certified = true;
+      op.actions.splice(op.index, 0, { type: 'certifyAndGroupMove', agentIds: s.agents.filter(a => a.alive && a.pos === op.step.from).map(a => a.id) });
+    } else if (op.probeState.lostCount >= op.probeState.threshold) {
+      op.losses = op.probeState.lostCount;
+    } else {
+      queueNextSequentialProbe(s, op);
+    }
   } else if (action.type === 'certifyAndGroupMove') {
     certifySafeTraversal(op);
     moveAgentGroup(action.agentIds, op.step.from, op.step.to, true);
-  } else if (action.type === 'waitRound') {
-    logAdd(s.round, 'info', `Waiting one round for probe results on edge (${op.step.from}->${op.step.to}).`);
-  } else if (action.type === 'evaluateProbeOutcome') {
-    evaluateProbeOutcome(s, op);
-  } else if (action.type === 'markDanger') {
-    logAdd(s.round, 'danger', `Edge (${op.step.from}->${op.step.to}) borders the known black hole; marked DANGEROUS without another loss.`);
   } else if (action.type === 'markMoveOnly') {
     s.currentNode = op.step.to;
     markCurrentNode(op.step.to);
@@ -600,7 +570,6 @@ function loseAgentToBlackHole(agentId, from, to) {
 function completeOperation(op) {
   const s = simState;
   const { from, to } = op.step;
-  const key = edgeKey(from, to);
   const cyEdge = getCyEdge(from, to);
   
   cyEdge.removeClass('probing');
@@ -667,7 +636,7 @@ function certifySafeTraversal(op) {
   cyRef.instance.getElementById(`n${from}`).addClass('safe');
   maybeIdentifyByzantine(from, to);
   op.certified = true;
-  logAdd(s.round, 'safe', `${label}: edge (${from}->${to}) certified SAFE after CCP pattern; memory expires at R${memory?.expiresAt ?? '?'}.`);
+  logAdd(s.round, 'safe', `${label}: edge (${from}->${to}) certified SAFE after 1-by-1 CCP; memory expires at R${memory?.expiresAt ?? '?'}.`);
 }
 
 function decayEdgeMemory(s) {
