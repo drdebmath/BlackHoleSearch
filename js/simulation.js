@@ -253,12 +253,14 @@ export function stepSimulation() {
       // If all initial (f+1) returned -> safe. If all initial lost -> dangerous.
       if (ps.returned === ps.initialIds.length && ps.initialIds.length === ps.needed) {
         logAdd(s.round, 'info', 'All initial probes returned -> SAFE');
+        op.actions.splice(op.index, 0, { type: 'moveScout' });
         op.actions.splice(op.index, 0, { type: 'markSafe' });
       } else if (ps.lost === ps.initialIds.length && ps.initialIds.length === ps.needed) {
         logAdd(s.round, 'danger', 'All initial probes lost -> DANGEROUS');
         op.actions.splice(op.index, 0, { type: 'markDanger' });
       } else if (ps.returned >= ps.threshold) {
         logAdd(s.round, 'info', 'Returned reached strict majority -> SAFE');
+        op.actions.splice(op.index, 0, { type: 'moveScout' });
         op.actions.splice(op.index, 0, { type: 'markSafe' });
       } else if (ps.lost >= ps.threshold) {
         logAdd(s.round, 'danger', 'Lost reached strict majority -> DANGEROUS');
@@ -299,10 +301,18 @@ export function stepSimulation() {
   } else if (action.type === 'move') {
     moveAgent(action.agentId, op.step.from, op.step.to);
   } else if (action.type === 'groupMove') {
-    action.agentIds.forEach(id => moveAgent(id, op.step.from, op.step.to));
-  } else if (action.type === 'markMoveOnly') {
-    s.currentNode = op.step.to;
-    markCurrentNode(op.step.to);
+    const agentId = action.agentIds[0];
+    if (agentId !== undefined) moveAgent(agentId, op.step.from, op.step.to);
+  } else if (action.type === 'moveScout') {
+    const agentId = op.probeState?.initialIds?.find(id => s.agents.some(a => a.id === id && a.alive && a.pos === op.step.from))
+      || s.agents.find(a => a.alive && a.pos === op.step.from)?.id;
+    if (agentId !== undefined) {
+      const moved = moveAgent(agentId, op.step.from, op.step.to);
+      if (moved) {
+        s.currentNode = op.step.to;
+        markCurrentNode(op.step.to);
+      }
+    }
   } else if (action.type === 'markSafe') {
     completeOperation(op, 'safe');
   } else if (action.type === 'markDanger') {
@@ -353,7 +363,8 @@ function getNextStep(s) {
             }
             const path = shortestPathToAny(s, s.currentNode, new Set([a, b]));
             if (path && path.length > 1) {
-                return { from: path[0], to: path[1], classify: false, label: 'Dynamic reposition' };
+                const edgeState = s.edgeStatus[edgeKey(path[0], path[1])];
+                return { from: path[0], to: path[1], classify: edgeState !== 'safe', label: 'Dynamic reposition' };
             } else {
                logAdd(s.round, 'warn', 'Cannot find a safe path to the remaining unknown edges!');
             }
@@ -435,8 +446,8 @@ function prepareOperation(s, step) {
       return { step: { ...step, classify: true }, actions, index: 0, losses: 0, probeState };
   }
 
-  // It's a known safe edge, group move
-  actions.push({ type: 'groupMove', agentIds: movers.map(a => a.id) });
+  // It's a known safe edge, move one agent at a time
+  actions.push({ type: 'move', agentId: movers[0].id });
   return { step: { ...step, classify: false }, actions, index: 0 };
 }
 
@@ -495,7 +506,6 @@ function completeOperation(op, result) {
       logAdd(s.round, 'danger', `BLACK HOLE DETECTED via (${from}->${to}).`);
     }
   } else if (result === 'safe') {
-    s.currentNode = to;
     s.edgeStatus[key] = 'safe';
     s.safeNodes.add(from);
     s.safeNodes.add(to);
@@ -505,11 +515,6 @@ function completeOperation(op, result) {
     cyRef.instance.getElementById(`n${from}`).addClass('safe');
     maybeIdentifyByzantine(from, to);
     logAdd(s.round, 'safe', `${label}: edge (${from}->${to}) certified SAFE after sequential CCP.`);
-    
-    // Group move the rest of the agents across the now-safe edge (use moveAgent to
-    // ensure BH activation and logging are handled per-agent rather than teleporting)
-    const remainingMovers = s.agents.filter(a => a.alive && a.pos === from);
-    remainingMovers.forEach(agent => moveAgent(agent.id, from, to));
   }
 }
 
