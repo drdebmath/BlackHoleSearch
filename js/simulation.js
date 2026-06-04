@@ -225,58 +225,90 @@ export function stepSimulation() {
   setStat('sRound', s.round);
   if (op.step) highlightEdge(op.step.from, op.step.to);
 
-  // ACTION PROCESSING ENGINE
-  if (action.type === 'startProbe' || action.type === 'nextProbe') {
-      const pState = op.probeState;
-      if (pState.queue.length === 0) {
-          logAdd(s.round, 'warn', 'Ran out of agents to complete probe! Marking dangerous.');
-          op.actions.splice(op.index, 0, { type: 'markDanger' });
+  // ACTION PROCESSING ENGINE (probe actions: probeOut, probeBack, evaluateProbeOutcome, waitRound)
+  if (action.type === 'probeOut') {
+    logAdd(s.round, 'info', `Probe OUT: A${action.agentId} -> ${op.step.from}->${op.step.to}`);
+    moveAgent(action.agentId, op.step.from, op.step.to);
+  } else if (action.type === 'probeBack') {
+    // Attempt to bring the agent back; moveAgent returns undefined for missing agent,
+    // but we can detect whether agent is still alive by checking its alive flag after move.
+    const beforeAlive = s.agents.find(a => a.id === action.agentId && a.alive);
+    logAdd(s.round, 'info', `Probe BACK: attempting return A${action.agentId} ${op.step.to}->${op.step.from}`);
+    const moved = moveAgent(action.agentId, op.step.to, op.step.from);
+    if (op.probeState) {
+      if (moved) {
+        op.probeState.returned++;
+        logAdd(s.round, 'info', `Probe RETURNED: A${action.agentId} (${op.probeState.returned}/${op.probeState.threshold || op.probeState.initialIds.length})`);
       } else {
-          const agentId = pState.queue.shift();
-          logAdd(s.round, 'info', `Sending Agent A${agentId} to independently probe ${op.step.from}->${op.step.to}`);
+        op.probeState.lost++;
+        logAdd(s.round, 'danger', `Probe LOST: A${action.agentId} did not return (lost=${op.probeState.lost}).`);
+      }
+    }
+  } else if (action.type === 'evaluateProbeOutcome') {
+    const ps = op.probeState;
+    if (!ps) {
+      logAdd(s.round, 'warn', 'Probe evaluation called with no probeState.');
+    } else {
+      logAdd(s.round, 'info', `Evaluating probe outcome: returned=${ps.returned}, lost=${ps.lost}, threshold=${ps.threshold}`);
+      // If all initial (f+1) returned -> safe. If all initial lost -> dangerous.
+      if (ps.returned === ps.initialIds.length && ps.initialIds.length === ps.needed) {
+        logAdd(s.round, 'info', 'All initial probes returned -> SAFE');
+        op.actions.splice(op.index, 0, { type: 'markSafe' });
+      } else if (ps.lost === ps.initialIds.length && ps.initialIds.length === ps.needed) {
+        logAdd(s.round, 'danger', 'All initial probes lost -> DANGEROUS');
+        op.actions.splice(op.index, 0, { type: 'markDanger' });
+      } else if (ps.returned >= ps.threshold) {
+        logAdd(s.round, 'info', 'Returned reached strict majority -> SAFE');
+        op.actions.splice(op.index, 0, { type: 'markSafe' });
+      } else if (ps.lost >= ps.threshold) {
+        logAdd(s.round, 'danger', 'Lost reached strict majority -> DANGEROUS');
+        op.actions.splice(op.index, 0, { type: 'markDanger' });
+      } else {
+        // Mixed results — cascade with one reserve agent (if available)
+        const reserveId = ps.reserveIds.shift();
+        if (reserveId === undefined) {
+          // try to find any other live agent at the from-node not already used
+          const used = new Set([...(ps.initialIds || []), ...(ps.reserveIds || [])]);
+          const found = s.agents.find(a => a.alive && a.pos === op.step.from && !used.has(a.id));
+          if (found) {
+            logAdd(s.round, 'info', `Cascade: using found reserve A${found.id}`);
+            op.actions.splice(op.index, 0,
+              { type: 'probeOut', agentId: found.id, phase: 'cascade' },
+              { type: 'waitRound' },
+              { type: 'probeBack', agentId: found.id, phase: 'cascade' },
+              { type: 'evaluateProbeOutcome' }
+            );
+          } else {
+            logAdd(s.round, 'warn', `No reserve agent available to continue cascading probe on edge (${op.step.from}->${op.step.to}); defaulting to DANGEROUS.`);
+            op.actions.splice(op.index, 0, { type: 'markDanger' });
+          }
+        } else {
+          logAdd(s.round, 'info', `Cascade: scheduling reserve A${reserveId}`);
           op.actions.splice(op.index, 0,
-              { type: 'probeOut', agentId },
-              { type: 'probeEvaluate', agentId }
+            { type: 'probeOut', agentId: reserveId, phase: 'cascade' },
+            { type: 'waitRound' },
+            { type: 'probeBack', agentId: reserveId, phase: 'cascade' },
+            { type: 'evaluateProbeOutcome' }
           );
+        }
       }
-  } else if (action.type === 'probeOut') {
-      moveAgent(action.agentId, op.step.from, op.step.to);
-  } else if (action.type === 'probeEvaluate') {
-      const agent = s.agents.find(a => a.id === action.agentId);
-      const isBH = (op.step.to === s.bhNode);
-      // Byzantine agents survive the BH and return to lie to the swarm
-      const survives = !(isBH && !agent.byzantine);
-
-      if (survives) {
-          moveAgent(action.agentId, op.step.to, op.step.from);
-          op.probeState.returned++;
-          logAdd(s.round, 'safe', `A${action.agentId} returned from probe (${op.probeState.returned}/${op.probeState.threshold} needed).`);
-      } else {
-          loseAgentToBlackHole(action.agentId, op.step.from, op.step.to);
-          op.probeState.lost++;
-      }
-
-      // Check strictly against the threshold
-      if (op.probeState.returned >= op.probeState.threshold) {
-           op.actions.splice(op.index, 0, { type: 'markSafe' });
-      } else if (op.probeState.lost >= op.probeState.threshold) {
-           op.actions.splice(op.index, 0, { type: 'markDanger' });
-      } else {
-           op.actions.splice(op.index, 0, { type: 'nextProbe' });
-      }
+    }
+  } else if (action.type === 'waitRound') {
+    // no-op for one simulation round (used to simulate simultaneous probe outs)
+    logAdd(s.round, 'info', `Waiting one round for probe results on edge (${op.step.from}->${op.step.to}).`);
   } else if (action.type === 'move') {
-      moveAgent(action.agentId, op.step.from, op.step.to);
+    moveAgent(action.agentId, op.step.from, op.step.to);
   } else if (action.type === 'groupMove') {
-      action.agentIds.forEach(id => moveAgent(id, op.step.from, op.step.to));
+    action.agentIds.forEach(id => moveAgent(id, op.step.from, op.step.to));
   } else if (action.type === 'markMoveOnly') {
-      s.currentNode = op.step.to;
-      markCurrentNode(op.step.to);
+    s.currentNode = op.step.to;
+    markCurrentNode(op.step.to);
   } else if (action.type === 'markSafe') {
-      completeOperation(op, 'safe');
+    completeOperation(op, 'safe');
   } else if (action.type === 'markDanger') {
-      completeOperation(op, 'dangerous');
+    completeOperation(op, 'dangerous');
   } else if (action.type === 'noop') {
-      logAdd(s.round, 'info', 'No movement required this round.');
+    logAdd(s.round, 'info', 'No movement required this round.');
   }
 
   if (op.index >= op.actions.length) {
@@ -365,32 +397,66 @@ function prepareOperation(s, step) {
       return { step, actions, index: 0 };
   }
 
-  // STRICT 1-BY-1 PROBE QUEUEING
-  if (step.classify && edgeState === 'unknown') {
-      logAdd(s.round, 'info', `Initiating STRICT 1-by-1 CCP on edge (${step.from}->${step.to}). (Threshold: ${s.f + 1})`);
+  // Probe orchestration: send f+1 agents initially, wait one round, collect returns,
+  // then cascade single-agent probes from reserves until a strict majority decides.
+  if (step.classify && edgeState !== 'safe') {
+      const needed = s.f + 1;
+      const initialAgents = movers.slice(0, Math.min(movers.length, needed));
+      const reserveAgents = movers.slice(initialAgents.length);
+
+      if (initialAgents.length === 0) {
+        logAdd(s.round, 'warn', `No agents available at node ${step.from} to probe edge (${step.from}->${step.to}).`);
+        actions.push({ type: 'markMoveOnly' });
+        return { step, actions, index: 0 };
+      }
+
+      const threshold = Math.floor((needed) / 2) + 1; // strict majority of f+1
+      logAdd(s.round, 'info', `CCP on edge (${step.from}->${step.to}): initial group ${initialAgents.map(a=>a.id).join(', ')}; threshold ${threshold}.`);
+
+      // Actions: send all initial probes out, wait, then have them return, then evaluate
+      initialAgents.forEach(agent => actions.push({ type: 'probeOut', agentId: agent.id, phase: 'initial' }));
+      actions.push({ type: 'waitRound' });
+      initialAgents.forEach(agent => actions.push({ type: 'probeBack', agentId: agent.id, phase: 'initial' }));
+      actions.push({ type: 'evaluateProbeOutcome' });
+
       const probeState = {
-          threshold: s.f + 1,
-          returned: 0,
-          lost: 0,
-          queue: movers.map(a => a.id)
+        needed,
+        initialIds: initialAgents.map(a => a.id),
+        reserveIds: reserveAgents.map(a => a.id),
+        returned: 0,
+        lost: 0,
+        threshold,
       };
-      actions.push({ type: 'startProbe' });
-      return { step, actions, index: 0, probeState, classify: true };
-  } else {
-      // It's a known safe edge, group move
-      actions.push({ type: 'groupMove', agentIds: movers.map(a => a.id) });
-      return { step, actions, index: 0 };
+
+      if (initialAgents.length < needed) {
+        logAdd(s.round, 'warn', `Only ${initialAgents.length} agent(s) available for required f+1=${needed} initial probes.`);
+      }
+
+      return { step: { ...step, classify: true }, actions, index: 0, losses: 0, probeState };
   }
+
+  // It's a known safe edge, group move
+  actions.push({ type: 'groupMove', agentIds: movers.map(a => a.id) });
+  return { step: { ...step, classify: false }, actions, index: 0 };
 }
 
 function moveAgent(agentId, from, to) {
   const s = simState;
   const agent = s.agents.find(a => a.id === agentId);
-  if (!agent || !agent.alive) return;
+  if (!agent || !agent.alive) return false;
+
+  const isBlackHoleEntry = to === s.bhNode;
+  const bbhActive = $('bbhActiveNow').checked;
+  if (isBlackHoleEntry && bbhActive) {
+    loseAgentToBlackHole(agentId, from, to);
+    return false;
+  }
+
   agent.pos = to;
   s.currentNode = to;
   markCurrentNode(to);
   logAdd(s.round, agent.byzantine ? 'byz' : 'info', `A${agent.id} moves ${from}->${to} (${agent.byzantine ? 'Byzantine' : 'good'}).`);
+  return true;
 }
 
 function loseAgentToBlackHole(agentId, from, to) {
@@ -440,11 +506,10 @@ function completeOperation(op, result) {
     maybeIdentifyByzantine(from, to);
     logAdd(s.round, 'safe', `${label}: edge (${from}->${to}) certified SAFE after sequential CCP.`);
     
-    // Group move the rest of the agents across the now-safe edge
+    // Group move the rest of the agents across the now-safe edge (use moveAgent to
+    // ensure BH activation and logging are handled per-agent rather than teleporting)
     const remainingMovers = s.agents.filter(a => a.alive && a.pos === from);
-    remainingMovers.forEach(agent => {
-        agent.pos = to;
-    });
+    remainingMovers.forEach(agent => moveAgent(agent.id, from, to));
   }
 }
 
