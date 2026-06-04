@@ -78,7 +78,7 @@ export function buildGraph() {
   
   state.traversalOrder = know === 'known'
     ? buildKnownDFSPlan(state)
-    : buildUnknownDFSPlan(state);
+    : [];
   setSimState(state);
 
   cy.getElementById('n' + homebase).addClass('homebase');
@@ -238,7 +238,7 @@ export function stepSimulation() {
     if (op.probeState) {
       if (moved) {
         op.probeState.returned++;
-        logAdd(s.round, 'info', `Probe RETURNED: A${action.agentId} (${op.probeState.returned}/${op.probeState.threshold || op.probeState.initialIds.length})`);
+        logAdd(s.round, 'info', `Probe RETURNED: A${action.agentId} (${op.probeState.returned}/${op.probeState.threshold || op.probeState.used.length})`);
       } else {
         op.probeState.lost++;
         logAdd(s.round, 'danger', `Probe LOST: A${action.agentId} did not return (lost=${op.probeState.lost}).`);
@@ -251,48 +251,26 @@ export function stepSimulation() {
     } else {
       logAdd(s.round, 'info', `Evaluating probe outcome: returned=${ps.returned}, lost=${ps.lost}, threshold=${ps.threshold}`);
       // If all initial (f+1) returned -> safe. If all initial lost -> dangerous.
-      if (ps.returned === ps.initialIds.length && ps.initialIds.length === ps.needed) {
-        logAdd(s.round, 'info', 'All initial probes returned -> SAFE');
-        op.actions.splice(op.index, 0, { type: 'moveScout' });
-        op.actions.splice(op.index, 0, { type: 'markSafe' });
-      } else if (ps.lost === ps.initialIds.length && ps.initialIds.length === ps.needed) {
-        logAdd(s.round, 'danger', 'All initial probes lost -> DANGEROUS');
-        op.actions.splice(op.index, 0, { type: 'markDanger' });
-      } else if (ps.returned >= ps.threshold) {
+      if (ps.returned >= ps.threshold) {
         logAdd(s.round, 'info', 'Returned reached strict majority -> SAFE');
         op.actions.splice(op.index, 0, { type: 'moveScout' });
         op.actions.splice(op.index, 0, { type: 'markSafe' });
       } else if (ps.lost >= ps.threshold) {
         logAdd(s.round, 'danger', 'Lost reached strict majority -> DANGEROUS');
         op.actions.splice(op.index, 0, { type: 'markDanger' });
+      } else if (ps.queue.length > 0) {
+        const nextAgentId = ps.queue.shift();
+        ps.used.push(nextAgentId);
+        logAdd(s.round, 'info', `Sequential probe continues with A${nextAgentId}.`);
+        op.actions.splice(op.index, 0,
+          { type: 'probeOut', agentId: nextAgentId, phase: 'initial' },
+          { type: 'waitRound' },
+          { type: 'probeBack', agentId: nextAgentId, phase: 'initial' },
+          { type: 'evaluateProbeOutcome' }
+        );
       } else {
-        // Mixed results — cascade with one reserve agent (if available)
-        const reserveId = ps.reserveIds.shift();
-        if (reserveId === undefined) {
-          // try to find any other live agent at the from-node not already used
-          const used = new Set([...(ps.initialIds || []), ...(ps.reserveIds || [])]);
-          const found = s.agents.find(a => a.alive && a.pos === op.step.from && !used.has(a.id));
-          if (found) {
-            logAdd(s.round, 'info', `Cascade: using found reserve A${found.id}`);
-            op.actions.splice(op.index, 0,
-              { type: 'probeOut', agentId: found.id, phase: 'cascade' },
-              { type: 'waitRound' },
-              { type: 'probeBack', agentId: found.id, phase: 'cascade' },
-              { type: 'evaluateProbeOutcome' }
-            );
-          } else {
-            logAdd(s.round, 'warn', `No reserve agent available to continue cascading probe on edge (${op.step.from}->${op.step.to}); defaulting to DANGEROUS.`);
-            op.actions.splice(op.index, 0, { type: 'markDanger' });
-          }
-        } else {
-          logAdd(s.round, 'info', `Cascade: scheduling reserve A${reserveId}`);
-          op.actions.splice(op.index, 0,
-            { type: 'probeOut', agentId: reserveId, phase: 'cascade' },
-            { type: 'waitRound' },
-            { type: 'probeBack', agentId: reserveId, phase: 'cascade' },
-            { type: 'evaluateProbeOutcome' }
-          );
-        }
+        logAdd(s.round, 'warn', `No more probe agents available on edge (${op.step.from}->${op.step.to}) and no decision reached. Marking DANGEROUS.`);
+        op.actions.splice(op.index, 0, { type: 'markDanger' });
       }
     }
   } else if (action.type === 'waitRound') {
@@ -304,7 +282,7 @@ export function stepSimulation() {
     const agentId = action.agentIds[0];
     if (agentId !== undefined) moveAgent(agentId, op.step.from, op.step.to);
   } else if (action.type === 'moveScout') {
-    const agentId = op.probeState?.initialIds?.find(id => s.agents.some(a => a.id === id && a.alive && a.pos === op.step.from))
+    const agentId = op.probeState?.used?.find(id => s.agents.some(a => a.id === id && a.alive && a.pos === op.step.from))
       || s.agents.find(a => a.alive && a.pos === op.step.from)?.id;
     if (agentId !== undefined) {
       const moved = moveAgent(agentId, op.step.from, op.step.to);
@@ -317,6 +295,10 @@ export function stepSimulation() {
     completeOperation(op, 'safe');
   } else if (action.type === 'markDanger') {
     completeOperation(op, 'dangerous');
+  } else if (action.type === 'markMoveOnly') {
+    logAdd(s.round, 'warn', `markMoveOnly: no live agents available at ${op.step.from}, skipping current step.`);
+    const currentEdgeState = s.edgeStatus[edgeKey(op.step.from, op.step.to)];
+    completeOperation(op, currentEdgeState === 'dangerous' ? 'dangerous' : 'safe');
   } else if (action.type === 'noop') {
     logAdd(s.round, 'info', 'No movement required this round.');
   }
@@ -354,20 +336,39 @@ function getNextStep(s) {
 
     // Dynamic routing for full exploration (Unknown Map)
     if (s.know === 'unknown') {
-        const targetKey = Object.entries(s.edgeStatus).find(([k, v]) => v === 'unknown')?.[0];
-        if (targetKey) {
-            const [a, b] = targetKey.split('-').map(Number);
-            if (s.currentNode === a || s.currentNode === b) {
-                const to = s.currentNode === a ? b : a;
-                return { from: s.currentNode, to, classify: true, label: 'Dynamic perimeter probe' };
+        const unknownEdges = Object.entries(s.edgeStatus)
+            .filter(([, v]) => v === 'unknown')
+            .map(([k]) => k);
+
+        if (unknownEdges.length > 0) {
+            // Prefer probing unknown edges adjacent to the current location.
+            for (const key of unknownEdges) {
+                const [a, b] = key.split('-').map(Number);
+                if (s.currentNode === a || s.currentNode === b) {
+                    const to = s.currentNode === a ? b : a;
+                    return { from: s.currentNode, to, classify: true, label: 'Dynamic perimeter probe' };
+                }
             }
-            const path = shortestPathToAny(s, s.currentNode, new Set([a, b]));
+
+            const goalNodes = new Set();
+            unknownEdges.forEach(key => {
+                const [a, b] = key.split('-').map(Number);
+                goalNodes.add(a);
+                goalNodes.add(b);
+            });
+
+            const path = shortestPathToAny(s, s.currentNode, goalNodes);
             if (path && path.length > 1) {
                 const edgeState = s.edgeStatus[edgeKey(path[0], path[1])];
                 return { from: path[0], to: path[1], classify: edgeState !== 'safe', label: 'Dynamic reposition' };
-            } else {
-               logAdd(s.round, 'warn', 'Cannot find a safe path to the remaining unknown edges!');
             }
+
+            const adjacentUnknown = (s.ports[s.currentNode] || []).find(neighbor => s.edgeStatus[edgeKey(s.currentNode, neighbor)] === 'unknown');
+            if (adjacentUnknown !== undefined) {
+                return { from: s.currentNode, to: adjacentUnknown, classify: true, label: 'Dynamic perimeter probe' };
+            }
+
+            logAdd(s.round, 'warn', 'Unknown edges remain but no reachable frontier could be found with current safe routing.');
         }
     }
     return null;
@@ -408,39 +409,37 @@ function prepareOperation(s, step) {
       return { step, actions, index: 0 };
   }
 
-  // Probe orchestration: send f+1 agents initially, wait one round, collect returns,
-  // then cascade single-agent probes from reserves until a strict majority decides.
+  // Probe orchestration: send one agent at a time across the edge until a strict majority decides.
   if (step.classify && edgeState !== 'safe') {
       const needed = s.f + 1;
-      const initialAgents = movers.slice(0, Math.min(movers.length, needed));
-      const reserveAgents = movers.slice(initialAgents.length);
+      const probeAgents = movers.slice(0, Math.min(movers.length, needed)).map(a => a.id);
 
-      if (initialAgents.length === 0) {
+      if (probeAgents.length === 0) {
         logAdd(s.round, 'warn', `No agents available at node ${step.from} to probe edge (${step.from}->${step.to}).`);
         actions.push({ type: 'markMoveOnly' });
         return { step, actions, index: 0 };
       }
 
-      const threshold = Math.floor((needed) / 2) + 1; // strict majority of f+1
-      logAdd(s.round, 'info', `CCP on edge (${step.from}->${step.to}): initial group ${initialAgents.map(a=>a.id).join(', ')}; threshold ${threshold}.`);
+      const threshold = Math.floor(needed / 2) + 1; // strict majority of f+1
+      logAdd(s.round, 'info', `CCP on edge (${step.from}->${step.to}): sequential probe; threshold ${threshold}.`);
 
-      // Actions: send all initial probes out, wait, then have them return, then evaluate
-      initialAgents.forEach(agent => actions.push({ type: 'probeOut', agentId: agent.id, phase: 'initial' }));
+      const firstAgentId = probeAgents.shift();
+      actions.push({ type: 'probeOut', agentId: firstAgentId, phase: 'initial' });
       actions.push({ type: 'waitRound' });
-      initialAgents.forEach(agent => actions.push({ type: 'probeBack', agentId: agent.id, phase: 'initial' }));
+      actions.push({ type: 'probeBack', agentId: firstAgentId, phase: 'initial' });
       actions.push({ type: 'evaluateProbeOutcome' });
 
       const probeState = {
         needed,
-        initialIds: initialAgents.map(a => a.id),
-        reserveIds: reserveAgents.map(a => a.id),
+        queue: probeAgents,
+        used: [firstAgentId],
         returned: 0,
         lost: 0,
         threshold,
       };
 
-      if (initialAgents.length < needed) {
-        logAdd(s.round, 'warn', `Only ${initialAgents.length} agent(s) available for required f+1=${needed} initial probes.`);
+      if (probeState.used.length < needed) {
+        logAdd(s.round, 'warn', `Only ${probeState.used.length} agent(s) reserved for required f+1=${needed} sequential probes.`);
       }
 
       return { step: { ...step, classify: true }, actions, index: 0, losses: 0, probeState };
