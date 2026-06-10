@@ -152,15 +152,24 @@ function requiredAgents(know, comm, f, delta) {
 function buildKnownDFSPlan(state) {
   const { homebase, ports } = state;
   const visited = new Set([homebase]);
+  const exploredEdges = new Set();
   const plan = [];
 
   const dfs = (u) => {
     for (const v of (ports[u] || [])) {
-      if (visited.has(v)) continue;
-      visited.add(v);
-      plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'DFS probe' });
-      dfs(v);
-      plan.push({ kind: 'move', from: v, to: u, classify: false, label: 'DFS backtrack' });
+      const key = edgeKey(u, v);
+      if (exploredEdges.has(key)) continue;
+      exploredEdges.add(key);
+      
+      if (!visited.has(v)) {
+        visited.add(v);
+        plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'DFS discovery' });
+        dfs(v);
+        plan.push({ kind: 'move', from: v, to: u, classify: false, label: 'DFS backtrack' });
+      } else {
+        // Back edge: probe but don't move (stay at u)
+        plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'DFS back-edge probe' });
+      }
     }
   };
 
@@ -182,13 +191,14 @@ function buildUnknownDFSPlan(state) {
       exploredEdges.add(key);
 
       if (!visitedNodes.has(v)) {
+        // Tree edge: discover new node
         visitedNodes.add(v);
         plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'DFS discovery' });
         dfs(v);
         plan.push({ kind: 'move', from: v, to: u, classify: false, label: 'DFS backtrack' });
       } else {
-        plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'DFS cross-edge probe' });
-        plan.push({ kind: 'move', from: v, to: u, classify: false, label: 'Return after cross-edge probe' });
+        // Back edge: probe but stay at current node
+        plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'DFS back-edge probe' });
       }
     }
   };
@@ -249,14 +259,14 @@ export function stepSimulation() {
     if (!ps) {
       logAdd(s.round, 'warn', 'Probe evaluation called with no probeState.');
     } else {
-      logAdd(s.round, 'info', `Evaluating probe outcome: returned=${ps.returned}, lost=${ps.lost}, threshold=${ps.threshold}`);
-      // If all initial (f+1) returned -> safe. If all initial lost -> dangerous.
+      logAdd(s.round, 'info', `Evaluating probe outcome: returned=${ps.returned}, lost=${ps.lost}, needed=${ps.threshold}`);
+      // All f+1 agents must be accounted for: all returned -> safe, all lost -> dangerous
       if (ps.returned >= ps.threshold) {
-        logAdd(s.round, 'info', 'Returned reached strict majority -> SAFE');
+        logAdd(s.round, 'info', `All ${ps.threshold} probe agents returned -> SAFE edge`);
         op.actions.splice(op.index, 0, { type: 'moveScout' });
         op.actions.splice(op.index, 0, { type: 'markSafe' });
       } else if (ps.lost >= ps.threshold) {
-        logAdd(s.round, 'danger', 'Lost reached strict majority -> DANGEROUS');
+        logAdd(s.round, 'danger', `All ${ps.threshold} probe agents lost -> DANGEROUS edge (Black Hole detected)`);
         op.actions.splice(op.index, 0, { type: 'markDanger' });
       } else if (ps.queue.length > 0) {
         const nextAgentId = ps.queue.shift();
@@ -420,8 +430,8 @@ function prepareOperation(s, step) {
         return { step, actions, index: 0 };
       }
 
-      const threshold = Math.floor(needed / 2) + 1; // strict majority of f+1
-      logAdd(s.round, 'info', `CCP on edge (${step.from}->${step.to}): sequential probe; threshold ${threshold}.`);
+      const threshold = needed; // All f+1 agents must be accounted for (all return = safe, all lost = dangerous)
+      logAdd(s.round, 'info', `CCP on edge (${step.from}->${step.to}): sequential probe with ${needed} agents; decision threshold ${threshold}.`);
 
       const firstAgentId = probeAgents.shift();
       actions.push({ type: 'probeOut', agentId: firstAgentId, phase: 'initial' });
