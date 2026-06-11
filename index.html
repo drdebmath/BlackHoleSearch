@@ -22,7 +22,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     <span class="badge badge-byz">BYZANTINE AGENTS</span>
     <span class="badge badge-bh">BLACK HOLE</span>
     <span class="badge badge-safe">ICDCS 2025</span>
-    <span class="badge badge-safe">BBH PERPETUAL</span>
   </div>
   <button class="panel-toggle" id="panelToggle" type="button" aria-controls="simControls simStatus" aria-expanded="true" title="Hide panels">
     <span class="panel-toggle-icon" aria-hidden="true"><span></span><span></span><span></span></span>
@@ -39,10 +38,10 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     <div class="controls">
 
       <label>
-        SIMULATION GOAL
-        <select id="simMode">
-          <option value="classic">Locate Black Hole (Classic)</option>
-          <option value="perpetual">Perpetual Exploration (BBH)</option>
+        SIMULATION MODE
+        <select id="simModeSelect">
+          <option value="bhs" selected>Black Hole Search (Original DFS+CCP)</option>
+          <option value="bbh_home">Perpetual Exploration (Paper BBH-HOME)</option>
         </select>
       </label>
 
@@ -55,7 +54,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
           <option value="grid">Grid</option>
           <option value="tree">Balanced Tree</option>
           <option value="star">Star</option>
-          <option value="path">Path</option>
         </select>
       </label>
 
@@ -100,10 +98,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
           <option value="40">Turbo</option>
         </select>
       </label>
-
-      <div class="btn-row" id="advRow" style="display: none; margin-bottom: 6px;">
-        <button class="btn btn-danger" id="adversaryBtn" style="width: 100%; border-color: #c850f0; color: #c850f0; font-weight: bold;">😈 ARM BYZANTINE BBH</button>
-      </div>
 
       <div class="btn-row">
         <button class="btn btn-primary" id="buildBtn">BUILD GRAPH</button>

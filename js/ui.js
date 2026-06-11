@@ -4,11 +4,10 @@ import { simState } from './state.js';
 
 export const $ = id => document.getElementById(id);
 
-export function setStat(id, val) { if ($(id)) $(id).textContent = val; }
+export function setStat(id, val) { $(id).textContent = val; }
 
 export function logAdd(round, type, msg) {
   const log = $('log');
-  if (!log) return;
   const entry = document.createElement('div');
   entry.className = 'log-entry';
   entry.innerHTML = `<span class="log-round">R${round}</span><span class="log-msg ${type}">${msg}</span>`;
@@ -16,12 +15,11 @@ export function logAdd(round, type, msg) {
   log.scrollTop = log.scrollHeight;
 }
 
-export function logClear() { if ($('log')) $('log').innerHTML = ''; }
+export function logClear() { $('log').innerHTML = ''; }
 
 export function updateAgentChips() {
   if (!simState) return;
   const list = $('agentList');
-  if (!list) return;
   list.innerHTML = '';
   simState.agents.forEach(a => {
     const chip = document.createElement('div');
@@ -33,9 +31,13 @@ export function updateAgentChips() {
     if (a.alive && simState.activeAgentId === a.id) classes.push('active');
     chip.className = classes.join(' ');
     
-    // Add specific paper roles if perpetual mode is active
-    const roleTag = a.role ? ` [${a.role}]` : '';
-    chip.textContent = `A${a.id}${a.byzantine ? ' ☿' : ''}${!a.alive ? ' ✕' : ` @${a.pos}`}${roleTag}`;
+    // Append paper specific role labels cleanly if active
+    let roleLabel = '';
+    if (simState.simMode === 'bbh_home' && a.alive) {
+      if (a.role) roleLabel = ` [${a.role}]`;
+    }
+    
+    chip.textContent = `A${a.id}${roleLabel}${a.byzantine ? ' ☿' : ''}${!a.alive ? ' ✕' : ` @${a.pos}`}`;
     list.appendChild(chip);
   });
 }
@@ -43,7 +45,6 @@ export function updateAgentChips() {
 export function updateEdgeTable() {
   if (!simState) return;
   const table = $('edgeTable');
-  if (!table) return;
   table.innerHTML = '';
   for (const [key, status] of Object.entries(simState.edgeStatus)) {
     const cls = status === 'safe' ? 'safe' : status === 'dangerous' ? 'danger' : 'unknown';
@@ -56,13 +57,12 @@ export function updateEdgeTable() {
 
 export function showOverlay(type, title, sub) {
   const ov = $('overlay');
-  if (!ov) return;
   ov.className = 'show ' + type;
-  if ($('ovTitle')) $('ovTitle').textContent = title;
-  if ($('ovSub')) $('ovSub').textContent   = sub;
+  $('ovTitle').textContent = title;
+  $('ovSub').textContent   = sub;
 }
 
-export function closeOverlay() { if ($('overlay')) $('overlay').className = ''; }
+export function closeOverlay() { $('overlay').className = ''; }
 
 export function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => {
@@ -74,36 +74,34 @@ export function switchTab(name) {
 }
 
 export function updateFormula() {
-  const fEl = $('fFault');
-  const f = fEl ? +fEl.value : 1;
-  const knowEl = $('topoKnow');
-  const know = knowEl ? knowEl.value : 'unknown';
-  const commEl = $('commModel');
-  const comm = commEl ? commEl.value : 'whiteboard';
-  
-  const modeEl = $('simMode');
-  const mode = modeEl ? modeEl.value : 'classic';
-  const topoEl = $('topoSelect');
-  const topo = topoEl ? topoEl.value : 'random';
+  const f = +$('fFault').value;
+  const know = $('topoKnow').value;
+  const comm = $('commModel').value;
+  const topo = $('topoSelect').value;
+  const simMode = $('simModeSelect').value;
 
   let k, time, alg;
-  
-  const advRow = $('advRow');
-  if (mode === 'perpetual') {
-     if (advRow) advRow.style.display = 'flex'; // Show Manual Adversary
-     // Research Paper Bounds
-     if (topo === 'path' || topo === 'ring') {
-         k = 6;
-         time = 'Perpetual (O(n))';
-         alg = 'PATH_PERPEXPLORE';
-     } else {
-         k = '3∆ + 3';
-         time = 'Perpetual (O(n³∆²))';
-         alg = 'GRAPH_PERPEXPLORE';
-     }
+
+  if (simMode === 'bbh_home') {
+    // Inject mathematical conditions and time bounds verbatim from the paper text
+    if (topo === 'tree' || topo === 'ring' || topo === 'star') {
+      k = 6; // Tight analytical bound for trees and simpler acyclic topologies
+      time = 'O(2^i \\log \\Delta)';
+      alg = 'TREE_PERPEXPLORE-BBH-HOME';
+    } else {
+      k = '3\\Delta + 3'; // Maximum resource constraint derived for general network structures
+      time = 'O(n^3 \\Delta^2)';
+      alg = 'GRAPH_PERPEXPLORE-BBH-HOME';
+    }
+    
+    $('formulaBox').innerHTML = `
+      <span class="hi">k ≥ ${k}</span> agents needed [Paper]<br>
+      Time Complexity: <span class="hi-g">$${time}$</span><br>
+      Protocol: <span class="hi">${alg}</span><br>
+      <span class="hi-r">f = ${f}</span> Byzantine black hole setting
+    `;
   } else {
-    if (advRow) advRow.style.display = 'none'; // Hide Manual Adversary
-    // Classic BHS Bounds
+    // Fall back to original bounds computation paths
     if (know === 'known') {
       k = 2 * f + 2;
       time = 'O(n + f)';
@@ -117,11 +115,8 @@ export function updateFormula() {
       time = 'O(m·n + f)';
       alg = 'DFS+CCP+MAP';
     }
-  }
 
-  const formulaBox = $('formulaBox');
-  if (formulaBox) {
-    formulaBox.innerHTML = `
+    $('formulaBox').innerHTML = `
       <span class="hi">k ≥ ${typeof k === 'number' ? `<b>${k}</b>` : k}</span> agents needed<br>
       Time: <span class="hi-g">${time}</span><br>
       Algorithm: <span class="hi">${alg}</span><br>
