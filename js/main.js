@@ -23,6 +23,7 @@ function refreshGraphViewport() {
 function setPanelsCollapsed(collapsed, persist = true) {
   const mobile = mobilePanelQuery.matches;
   document.body.classList.toggle('panels-collapsed', collapsed);
+  if (!panelToggle) return;
   panelToggle.setAttribute('aria-expanded', String(!collapsed));
   panelToggle.setAttribute('aria-label', collapsed ? 'Show controls and status panels' : 'Hide controls and status panels');
   panelToggle.title = collapsed ? 'Show panels' : 'Hide panels';
@@ -59,39 +60,48 @@ if (panelToggle) {
 }
 window.addEventListener('resize', refreshGraphViewport);
 
-nNodes.oninput = () => { $('nVal').textContent = nNodes.value; updateFormula(); };
-fFault.oninput = () => { $('fVal').textContent = fFault.value; updateFormula(); };
-$('topoKnow').onchange = updateFormula;
-$('commModel').onchange = updateFormula;
+if (nNodes) nNodes.oninput = () => { if ($('nVal')) $('nVal').textContent = nNodes.value; updateFormula(); };
+if (fFault) fFault.oninput = () => { if ($('fVal')) $('fVal').textContent = fFault.value; updateFormula(); };
+if ($('topoKnow')) $('topoKnow').onchange = updateFormula;
+if ($('commModel')) $('commModel').onchange = updateFormula;
+if ($('topoSelect')) $('topoSelect').onchange = () => { updateFormula(); buildGraph(); };
 
-// Hook up the new Simulator Mode
-$('simMode').onchange = () => { updateFormula(); buildGraph(); };
+// Safely hook up the new Simulator Mode
+const simModeSel = $('simMode');
+if (simModeSel) {
+    simModeSel.onchange = () => { updateFormula(); buildGraph(); };
+}
 
-$('buildBtn').onclick = buildGraph;
-$('resetBtn').onclick = resetSimulation;
-$('stepBtn').onclick  = stepSimulation;
+if ($('buildBtn')) $('buildBtn').onclick = buildGraph;
+if ($('resetBtn')) $('resetBtn').onclick = resetSimulation;
+if ($('stepBtn')) $('stepBtn').onclick  = stepSimulation;
 
-// Hook up the Manual Adversary Trap
-$('adversaryBtn').onclick = () => {
-  triggerAdversary();
-  const btn = $('adversaryBtn');
-  btn.textContent = "💥 BBH ARMED!";
-  setTimeout(() => btn.textContent = "😈 ARM BYZANTINE BBH", 1500);
-};
+// Safely hook up the Manual Adversary Trap
+const advBtn = $('adversaryBtn');
+if (advBtn) {
+  advBtn.onclick = () => {
+    triggerAdversary();
+    advBtn.textContent = "💥 BBH ARMED!";
+    setTimeout(() => advBtn.textContent = "😈 ARM BYZANTINE BBH", 1500);
+  };
+}
 
-runBtn.onclick = () => {
-  if (runRef.intervalId) {
-    clearInterval(runRef.intervalId);
-    runRef.intervalId = null;
-    runBtn.textContent = '▶ RUN SIMULATION';
-  } else {
-    const speed = +$('speedSel').value;
-    runRef.intervalId = setInterval(stepSimulation, speed);
-    runBtn.textContent = '⏸ PAUSE';
-  }
-};
+if (runBtn) {
+  runBtn.onclick = () => {
+    if (runRef.intervalId) {
+      clearInterval(runRef.intervalId);
+      runRef.intervalId = null;
+      runBtn.textContent = '▶ RUN SIMULATION';
+    } else {
+      const speedElement = $('speedSel');
+      const speed = speedElement ? +speedElement.value : 400;
+      runRef.intervalId = setInterval(stepSimulation, speed);
+      runBtn.textContent = '⏸ PAUSE';
+    }
+  };
+}
 
-$('overlayCloseBtn').addEventListener('click', closeOverlay);
+if ($('overlayCloseBtn')) $('overlayCloseBtn').addEventListener('click', closeOverlay);
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });

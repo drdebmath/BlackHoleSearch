@@ -4,10 +4,11 @@ import { simState } from './state.js';
 
 export const $ = id => document.getElementById(id);
 
-export function setStat(id, val) { $(id).textContent = val; }
+export function setStat(id, val) { if ($(id)) $(id).textContent = val; }
 
 export function logAdd(round, type, msg) {
   const log = $('log');
+  if (!log) return;
   const entry = document.createElement('div');
   entry.className = 'log-entry';
   entry.innerHTML = `<span class="log-round">R${round}</span><span class="log-msg ${type}">${msg}</span>`;
@@ -15,11 +16,12 @@ export function logAdd(round, type, msg) {
   log.scrollTop = log.scrollHeight;
 }
 
-export function logClear() { $('log').innerHTML = ''; }
+export function logClear() { if ($('log')) $('log').innerHTML = ''; }
 
 export function updateAgentChips() {
   if (!simState) return;
   const list = $('agentList');
+  if (!list) return;
   list.innerHTML = '';
   simState.agents.forEach(a => {
     const chip = document.createElement('div');
@@ -41,6 +43,7 @@ export function updateAgentChips() {
 export function updateEdgeTable() {
   if (!simState) return;
   const table = $('edgeTable');
+  if (!table) return;
   table.innerHTML = '';
   for (const [key, status] of Object.entries(simState.edgeStatus)) {
     const cls = status === 'safe' ? 'safe' : status === 'dangerous' ? 'danger' : 'unknown';
@@ -53,12 +56,13 @@ export function updateEdgeTable() {
 
 export function showOverlay(type, title, sub) {
   const ov = $('overlay');
+  if (!ov) return;
   ov.className = 'show ' + type;
-  $('ovTitle').textContent = title;
-  $('ovSub').textContent   = sub;
+  if ($('ovTitle')) $('ovTitle').textContent = title;
+  if ($('ovSub')) $('ovSub').textContent   = sub;
 }
 
-export function closeOverlay() { $('overlay').className = ''; }
+export function closeOverlay() { if ($('overlay')) $('overlay').className = ''; }
 
 export function switchTab(name) {
   document.querySelectorAll('.tab').forEach(t => {
@@ -70,16 +74,23 @@ export function switchTab(name) {
 }
 
 export function updateFormula() {
-  const f = +$('fFault').value;
-  const know = $('topoKnow').value;
-  const comm = $('commModel').value;
-  const mode = $('simMode').value;
-  const topo = $('topoSelect').value;
+  const fEl = $('fFault');
+  const f = fEl ? +fEl.value : 1;
+  const knowEl = $('topoKnow');
+  const know = knowEl ? knowEl.value : 'unknown';
+  const commEl = $('commModel');
+  const comm = commEl ? commEl.value : 'whiteboard';
+  
+  const modeEl = $('simMode');
+  const mode = modeEl ? modeEl.value : 'classic';
+  const topoEl = $('topoSelect');
+  const topo = topoEl ? topoEl.value : 'random';
 
   let k, time, alg;
   
+  const advRow = $('advRow');
   if (mode === 'perpetual') {
-     $('advRow').style.display = 'flex'; // Show Manual Adversary
+     if (advRow) advRow.style.display = 'flex'; // Show Manual Adversary
      // Research Paper Bounds
      if (topo === 'path' || topo === 'ring') {
          k = 6;
@@ -91,7 +102,7 @@ export function updateFormula() {
          alg = 'GRAPH_PERPEXPLORE';
      }
   } else {
-    $('advRow').style.display = 'none'; // Hide Manual Adversary
+    if (advRow) advRow.style.display = 'none'; // Hide Manual Adversary
     // Classic BHS Bounds
     if (know === 'known') {
       k = 2 * f + 2;
@@ -108,10 +119,13 @@ export function updateFormula() {
     }
   }
 
-  $('formulaBox').innerHTML = `
-    <span class="hi">k ≥ ${typeof k === 'number' ? `<b>${k}</b>` : k}</span> agents needed<br>
-    Time: <span class="hi-g">${time}</span><br>
-    Algorithm: <span class="hi">${alg}</span><br>
-    <span class="hi-r">f = ${f}</span> Byzantine fault(s)
-  `;
+  const formulaBox = $('formulaBox');
+  if (formulaBox) {
+    formulaBox.innerHTML = `
+      <span class="hi">k ≥ ${typeof k === 'number' ? `<b>${k}</b>` : k}</span> agents needed<br>
+      Time: <span class="hi-g">${time}</span><br>
+      Algorithm: <span class="hi">${alg}</span><br>
+      <span class="hi-r">f = ${f}</span> Byzantine fault(s)
+    `;
+  }
 }

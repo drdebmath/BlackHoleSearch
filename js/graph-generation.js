@@ -44,6 +44,14 @@ export function generateGraph(topo, n) {
     case 'star':
       for (let i = 1; i < n; i++) addEdge(0, i);
       break;
+      
+    case 'path':
+      for (let i = 0; i < n - 1; i++) addEdge(i, i + 1);
+      // Ensure the path graphs draw in a neat horizontal line for pattern observation
+      nodes.forEach((node, i) => {
+         node.position = { x: i * 80 - ((n-1)*80)/2, y: 0 };
+      });
+      break;
 
     default:
       buildRandomConnected(n, addEdge, edges);
