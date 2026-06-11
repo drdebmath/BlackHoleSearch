@@ -1,5 +1,3 @@
-// Entry point: wires up DOM events and starts the simulator.
-
 import { cyRef, runRef } from './state.js';
 import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph } from './simulation.js';
 import { $, updateFormula, closeOverlay, switchTab } from './ui.js';
@@ -59,18 +57,20 @@ if (panelToggle) {
 }
 window.addEventListener('resize', refreshGraphViewport);
 
-// Update logic dynamically based on user selections
 nNodes.oninput = () => { $('nVal').textContent = nNodes.value; updateFormula(); };
 fFault.oninput = () => { $('fVal').textContent = fFault.value; updateFormula(); };
 $('topoKnow').onchange = updateFormula;
 $('commModel').onchange = updateFormula;
 $('topoSelect').onchange = () => { updateFormula(); buildGraph(); };
 
-// NEW: Wire up the Simulation Mode toggle seamlessly
-$('simModeSelect').addEventListener('change', () => {
-  updateFormula();
-  buildGraph();
-});
+// SAFE WIRE-UP: Will not crash if the HTML hasn't been updated yet
+const simModeToggle = $('simModeSelect');
+if (simModeToggle) {
+  simModeToggle.addEventListener('change', () => {
+    updateFormula();
+    buildGraph();
+  });
+}
 
 $('buildBtn').onclick = buildGraph;
 $('resetBtn').onclick = resetSimulation;

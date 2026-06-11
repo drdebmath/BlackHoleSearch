@@ -1,5 +1,3 @@
-// DOM helpers: stats, event log, agent chips, edge table, overlay, tabs.
-
 import { simState } from './state.js';
 
 export const $ = id => document.getElementById(id);
@@ -78,18 +76,19 @@ export function updateFormula() {
   const know = $('topoKnow').value;
   const comm = $('commModel').value;
   const topo = $('topoSelect').value;
-  const simMode = $('simModeSelect')?.value; // Graceful catch
+  const simModeToggle = $('simModeSelect');
+  const simMode = simModeToggle ? simModeToggle.value : 'bhs'; // Graceful catch
 
   let k, time, alg;
 
   if (simMode === 'bbh_home') {
     if (topo === 'tree' || topo === 'ring' || topo === 'star' || topo === 'path') {
       k = 6; 
-      time = '$O(2^i \\log \\Delta)$';
+      time = 'O(2^i log Δ)';
       alg = 'TREE_PERPEXPLORE-BBH-HOME';
     } else {
-      k = '$3\\Delta + 3$'; 
-      time = '$O(n^3 \\Delta^2)$';
+      k = '3Δ + 3'; 
+      time = 'O(n^3 Δ^2)';
       alg = 'GRAPH_PERPEXPLORE-BBH-HOME';
     }
     
@@ -100,7 +99,6 @@ export function updateFormula() {
       <span class="hi-r">f = ${f}</span> Byzantine black hole setting
     `;
   } else {
-    // Original bounds logic
     if (know === 'known') {
       k = 2 * f + 2;
       time = 'O(n + f)';

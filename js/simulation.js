@@ -1,5 +1,3 @@
-// Black Hole Search & Perpetual Exploration simulation engine.
-
 import { cyRef, runRef, simState, setSimState } from './state.js';
 import { generateGraph } from './graph-generation.js';
 import { initCy } from './cytoscape-setup.js';
@@ -18,7 +16,10 @@ export function buildGraph() {
   const f    = +$('fFault').value;
   const comm = $('commModel').value;
   const know = $('topoKnow').value;
-  const simMode = $('simModeSelect').value;
+  
+  // Safe extraction
+  const simModeToggle = $('simModeSelect');
+  const simMode = simModeToggle ? simModeToggle.value : 'bhs'; 
 
   const { nodes, edges } = generateGraph(topo, n);
   initCy(nodes, edges);
@@ -30,9 +31,10 @@ export function buildGraph() {
   const neighbors = buildNeighbors(n, edges);
   const bhNode = chooseBlackHole(n, homebase, neighbors, know);
 
-  const delta = Math.max(...Object.values(neighbors).map(v => v.length));
+  // Fallback to 1 if there are no edges to prevent -Infinity
+  let delta = Math.max(...Object.values(neighbors).map(v => v.length));
+  if (delta < 0) delta = 1; 
   
-  // Assign agents based strictly on the selected mode
   let k;
   if (simMode === 'bbh_home') {
     k = (topo === 'tree' || topo === 'ring' || topo === 'star' || topo === 'path') ? 6 : (3 * delta + 3);
@@ -89,7 +91,6 @@ export function buildGraph() {
     activeAgentId: null,
     identifiedByzantine: new Set(),
     lostInBH: 0,
-    // Paper specific parameters
     paperInterventionTriggered: false,
     paperSequencePlan: []
   };
@@ -134,7 +135,7 @@ export function buildGraph() {
 
 function generatePaperActionPlan(state) {
   const plan = [];
-  const baseOrder = buildKnownDFSPlan(state); // Generate underlying physical paths
+  const baseOrder = buildKnownDFSPlan(state); 
   
   plan.push({ type: 'pattern_create', round: 1, desc: 'MAKE_PATTERN R1' });
   plan.push({ type: 'pattern_create', round: 2, desc: 'MAKE_PATTERN R2' });
@@ -249,7 +250,6 @@ function buildUnknownDFSPlan(state) {
 export function stepSimulation() {
   if (!simState || simState.done) return;
 
-  // Intercept the loop and branch execution based on chosen mode
   if (simState.simMode === 'bbh_home') {
     stepPaperSimulation();
     return;
@@ -354,7 +354,9 @@ function stepPaperSimulation() {
         if (isDangerous) {
           f1.alive = false; f1.status = 'dead'; s.lostInBH++;
           logAdd(s.round, 'danger', `Backup Cautious Mover [F1] verifies edge (${from}->${to}) and is lost.`);
-          logAdd(s.round, 'safe', `Homebase backup [F2] successfully infers the Byzantine Black Hole at ${to}!`);
+          if (f2) {
+            logAdd(s.round, 'safe', `Homebase backup [F2] successfully infers the Byzantine Black Hole at ${to}!`);
+          }
           s.edgeStatus[edgeKey(from, to)] = 'dangerous';
           s.bhLocated = true;
           finishSim(true);
@@ -403,9 +405,11 @@ function stepPaperSimulation() {
         s.edgeStatus[edgeKey(from, to)] = 'safe';
         s.safeNodes.add(from);
         s.safeNodes.add(to);
-        cyRef.instance.getElementById(`n${from}`).addClass('safe');
-        cyRef.instance.getElementById(`n${to}`).addClass('safe');
-        getCyEdge(from, to).addClass('safe');
+        if (cyRef.instance) {
+          cyRef.instance.getElementById(`n${from}`).addClass('safe');
+          cyRef.instance.getElementById(`n${to}`).addClass('safe');
+          getCyEdge(from, to).addClass('safe');
+        }
       }
     }
     s.traversalIndex++;
@@ -560,7 +564,7 @@ function finishSim(success) {
   clearInterval(runRef.intervalId);
   runRef.intervalId = null;
 
-  cyRef.instance.edges().removeClass('probing');
+  if (cyRef.instance) cyRef.instance.edges().removeClass('probing');
   refreshDisplay();
   $('progressBar').style.width = '100%';
   $('runBtn').textContent = '▶ RUN SIMULATION';
