@@ -78,7 +78,7 @@ export function buildGraph() {
   
   state.traversalOrder = know === 'known'
     ? buildKnownDFSPlan(state)
-    : [];
+    : buildUnknownDFSPlan(state);
   setSimState(state);
 
   cy.getElementById('n' + homebase).addClass('homebase');
@@ -306,9 +306,7 @@ export function stepSimulation() {
   } else if (action.type === 'markDanger') {
     completeOperation(op, 'dangerous');
   } else if (action.type === 'markMoveOnly') {
-    logAdd(s.round, 'warn', `markMoveOnly: no live agents available at ${op.step.from}, skipping current step.`);
-    const currentEdgeState = s.edgeStatus[edgeKey(op.step.from, op.step.to)];
-    completeOperation(op, currentEdgeState === 'dangerous' ? 'dangerous' : 'safe');
+    logAdd(s.round, 'warn', `markMoveOnly: no live agents available at ${op.step.from}, skipping current step and preserving edge status.`);
   } else if (action.type === 'noop') {
     logAdd(s.round, 'info', 'No movement required this round.');
   }
@@ -335,12 +333,19 @@ function getNextStep(s) {
     while (s.traversalIndex < s.traversalOrder.length) {
         const step = s.traversalOrder[s.traversalIndex++];
         const edgeState = s.edgeStatus[edgeKey(step.from, step.to)];
-        
+        const hasMover = s.agents.some(a => a.alive && a.pos === step.from);
+
         // If the static plan wants to walk through a node we already proved is a Black Hole, skip it.
         if (edgeState === 'dangerous') {
             logAdd(s.round, 'warn', `Skipping static DFS step ${step.from}->${step.to} as it is blocked by the Black Hole.`);
             continue;
         }
+
+        if (!hasMover) {
+            logAdd(s.round, 'warn', `Skipping static DFS step ${step.from}->${step.to} because no live agents remain at node ${step.from}.`);
+            continue;
+        }
+
         return step;
     }
 
