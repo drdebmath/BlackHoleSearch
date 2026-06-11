@@ -99,14 +99,31 @@ export function setupBBHUI() {
 
 export function updateFormula() {
   const f = +$('fFault').value;
-  const k = Math.max(4, 2 * f + 2); // Dynamic fallback
+  const comm = $('commModel').value;
+  const know = $('topoKnow').value;
   const ttl = $('memoryTTL') ? +$('memoryTTL').value : 8;
-  
+
+  let bound = '2f + 2';
+  let time = 'O(n + f)';
+  let algorithm = 'DFS + CCP';
+
+  if (know === 'unknown') {
+    if (comm === 'whiteboard') {
+      bound = '(f + 1)(Δ + 1)';
+      time = 'O(m + f)';
+      algorithm = 'DFS + CCP + WB';
+    } else {
+      bound = '(f + 1)(Δ + 1) + 3f + 1';
+      time = 'O(m·n + f)';
+      algorithm = 'DFS + CCP + MAP';
+    }
+  }
+
   $('formulaBox').innerHTML = `
-    <span class="hi">BBH adversarial activation (per-round)</span><br>
-    <span class="hi">k ≥ ${k}</span> agents needed<br>
-    Time: <span class="hi-g">O(n + f)</span><br>
-    Algorithm: <span class="hi">DFS+CCP+DECAY</span><br>
+    <span class="hi">Team size bound</span><br>
+    <span class="hi">k ≥ ${bound}</span><br>
+    Time: <span class="hi-g">${time}</span><br>
+    Algorithm: <span class="hi">${algorithm}</span><br>
     Safe memory TTL: <span class="hi-g">${ttl}</span> round(s)<br>
     <span class="hi-r">f = ${f}</span> Byzantine fault(s)
   `;

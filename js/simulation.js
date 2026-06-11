@@ -96,10 +96,16 @@ export function buildGraph() {
   $('progressBar').style.width = '0%';
 
   logClear();
+  const algorithmLabel = know === 'known'
+    ? 'DFS + CCP'
+    : comm === 'whiteboard'
+      ? 'DFS + CCP + WB'
+      : 'DFS + CCP + MAP';
+
   logAdd(0, 'system', `Graph built: ${n} nodes, ${edges.length} edges, Delta=${delta}`);
   logAdd(0, 'system', `Black Hole at node ${bhNode} (hidden from agents)`);
   logAdd(0, 'system', `Team: k=${k} agents, f=${f} Byzantine`);
-  logAdd(0, 'system', `Algorithm: ${know === 'known' ? 'WhiteboardMap/ProbeMap' : 'WhiteboardWithoutMap/ProbeWithoutMap'}`);
+  logAdd(0, 'system', `Algorithm: ${algorithmLabel}`);
   logAdd(0, 'info', `Homebase: node ${homebase}. DFS traversal plan ready.`);
 
   $('runBtn').disabled  = false;
