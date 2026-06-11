@@ -84,6 +84,19 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         </select>
       </label>
 
+      <label>
+        ADVERSARY MODE
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+          <input type="checkbox" id="advMode">
+          <span style="font-size:12px;color:var(--muted)">Enable Byzantine Black Hole</span>
+        </div>
+      </label>
+
+      <label>
+        BH KILL PROBABILITY — <span class="val-display" id="bhProbVal">100%</span>
+        <input type="range" id="bhProb" min="0" max="100" value="100">
+      </label>
+
       <div class="formula-box" id="formulaBox">
         — configure above —
       </div>

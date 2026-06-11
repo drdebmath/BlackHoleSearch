@@ -63,6 +63,12 @@ $('topoKnow').onchange = updateFormula;
 $('commModel').onchange = updateFormula;
 $('topoSelect').onchange = () => { updateFormula(); buildGraph(); };
 
+// Adversary controls wiring
+const advToggle = $('advMode');
+const bhProb = $('bhProb');
+if (advToggle) advToggle.addEventListener('change', () => buildGraph());
+if (bhProb) bhProb.addEventListener('input', () => { $('bhProbVal').textContent = bhProb.value + '%'; });
+
 // SAFE WIRE-UP: Will not crash if the HTML hasn't been updated yet
 const simModeToggle = $('simModeSelect');
 if (simModeToggle) {

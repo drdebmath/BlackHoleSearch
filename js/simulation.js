@@ -29,7 +29,9 @@ export function buildGraph() {
 
   const homebase = 0;
   const neighbors = buildNeighbors(n, edges);
-  const bhNode = chooseBlackHole(n, homebase, neighbors, know);
+  const advEnabled = $('advMode') ? $('advMode').checked : false;
+  const bhKillProb = $('bhProb') ? (+$('bhProb').value / 100) : 1.0;
+  const bhNode = chooseBlackHole(n, homebase, neighbors, know, advEnabled ? bhKillProb : null);
 
   // Fallback to 1 if there are no edges to prevent -Infinity
   let delta = Math.max(...Object.values(neighbors).map(v => v.length));
@@ -172,6 +174,14 @@ function chooseBlackHole(n, homebase, neighbors, know) {
     ? candidates.filter(node => graphStaysConnectedWithout(node, homebase, neighbors, n))
     : candidates;
   const pool = viable.length > 0 ? viable : candidates;
+  // Optionally choose a probabilistic Byzantine BH depending on provided probability
+  if (arguments.length >= 5 && typeof arguments[4] === 'number') {
+    const prob = arguments[4];
+    // With probability `prob` choose a real BH from pool, else choose a dormant BH (no kills)
+    if (Math.random() <= prob) return pool[Math.floor(Math.random() * pool.length)];
+    // choose a dormant node (BH that won't kill agents) - use null to indicate inert
+    return null;
+  }
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -421,16 +431,28 @@ function prepareOperation(s, step) {
   if (!step) {
     return { step: { from: s.currentNode, to: s.currentNode }, actions: [{ type: 'noop' }], index: 0 };
   }
-
-  const dangerous = step.to === s.bhNode;
+  const dangerous = (s.bhNode !== null) && (step.to === s.bhNode);
   const actions = [];
 
   if (dangerous) {
     if (!s.bhLocated) {
-      const probes = s.agents
-        .filter(a => a.alive && !a.byzantine && a.pos === step.from)
-        .slice(0, s.f + 1);
-      probes.forEach(agent => actions.push({ type: 'lose', agentId: agent.id }));
+      // Send sequential probes: each probe out + back so the agent always returns to report
+      const probes = s.agents.filter(a => a.alive && !a.byzantine && a.pos === step.from).map(a => a.id);
+      const needed = s.f + 1;
+      let used = probes.slice(0, Math.min(probes.length, needed));
+      if (used.length === 0) {
+        actions.push({ type: 'markMoveOnly' });
+        return { step, actions, index: 0 };
+      }
+      // For each probe agent: probeOut, waitRound, probeBack, evaluate
+      used.forEach(agentId => {
+        actions.push({ type: 'probeOut', agentId });
+        actions.push({ type: 'waitRound' });
+        actions.push({ type: 'probeBack', agentId });
+        actions.push({ type: 'evaluateProbeOutcome' });
+      });
+      // Attach probeState to step so evaluation can inspect counts
+      return { step, actions, index: 0, probeState: { needed, used: [...used], returned: 0, lost: 0, queue: probes.slice(used.length) } };
     } else {
       actions.push({ type: 'markDanger' });
     }
