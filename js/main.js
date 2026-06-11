@@ -1,10 +1,11 @@
+// Entry point: wires up DOM events and starts the simulator.
+
 import { cyRef, runRef } from './state.js';
-import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph } from './simulation.js';
-import { $, updateFormula, closeOverlay, switchTab, setupBBHUI } from './ui.js';
+import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph, triggerAdversary } from './simulation.js';
+import { $, updateFormula, closeOverlay, switchTab } from './ui.js';
 
 const nNodes  = $('nNodes');
 const fFault  = $('fFault');
-const memoryTTL = $('memoryTTL');
 const runBtn  = $('runBtn');
 const panelToggle = $('panelToggle');
 const panelStoreKey = 'bhs-panels-collapsed';
@@ -60,14 +61,23 @@ window.addEventListener('resize', refreshGraphViewport);
 
 nNodes.oninput = () => { $('nVal').textContent = nNodes.value; updateFormula(); };
 fFault.oninput = () => { $('fVal').textContent = fFault.value; updateFormula(); };
-memoryTTL.oninput = () => { $('memoryTtlVal').textContent = memoryTTL.value; updateFormula(); };
 $('topoKnow').onchange = updateFormula;
 $('commModel').onchange = updateFormula;
-$('simMode').onchange = updateFormula;
+
+// Hook up the new Simulator Mode
+$('simMode').onchange = () => { updateFormula(); buildGraph(); };
 
 $('buildBtn').onclick = buildGraph;
 $('resetBtn').onclick = resetSimulation;
 $('stepBtn').onclick  = stepSimulation;
+
+// Hook up the Manual Adversary Trap
+$('adversaryBtn').onclick = () => {
+  triggerAdversary();
+  const btn = $('adversaryBtn');
+  btn.textContent = "💥 BBH ARMED!";
+  setTimeout(() => btn.textContent = "😈 ARM BYZANTINE BBH", 1500);
+};
 
 runBtn.onclick = () => {
   if (runRef.intervalId) {
@@ -86,6 +96,5 @@ document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });
 
-setupBBHUI();
 updateFormula();
 buildGraph();

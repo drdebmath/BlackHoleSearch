@@ -79,6 +79,7 @@ export function updateFormula() {
   let k, time, alg;
   
   if (mode === 'perpetual') {
+     $('advRow').style.display = 'flex'; // Show Manual Adversary
      // Research Paper Bounds
      if (topo === 'path' || topo === 'ring') {
          k = 6;
@@ -90,6 +91,7 @@ export function updateFormula() {
          alg = 'GRAPH_PERPEXPLORE';
      }
   } else {
+    $('advRow').style.display = 'none'; // Hide Manual Adversary
     // Classic BHS Bounds
     if (know === 'known') {
       k = 2 * f + 2;

@@ -1,5 +1,5 @@
 // Black Hole Search simulation engine.
-// Parallelized to support both Classic BHS and Research Paper Perpetual Exploration.
+// Supports Classic BHS and Perpetual Exploration with a Byzantine Black Hole.
 
 import { cyRef, runRef, simState, setSimState } from './state.js';
 import { generateGraph } from './graph-generation.js';
@@ -8,6 +8,12 @@ import {
   $, setStat, logAdd, logClear, updateAgentChips,
   updateEdgeTable, showOverlay, updateFormula,
 } from './ui.js';
+
+export function triggerAdversary() {
+  if (!simState || simState.mode !== 'perpetual') return;
+  simState.bbhArmed = true;
+  logAdd(simState.round, 'byz', 'Adversary has ARMED the Byzantine Black Hole! The next agent to visit it will be destroyed.');
+}
 
 export function buildGraph() {
   clearInterval(runRef.intervalId);
@@ -50,7 +56,7 @@ export function buildGraph() {
       byzantine: i < f,
       identified: false,
       status: i < f ? 'byz' : 'good',
-      role: null // Used for perpetual mode (L, I1, I2, F)
+      role: null
     });
   }
 
@@ -81,28 +87,20 @@ export function buildGraph() {
     activeAgentId: null,
     identifiedByzantine: new Set(),
     lostInBH: 0,
-    // --- Perpetual Mode Specific States ---
-    perpPhaseRound: 0,
-    perpDirection: 1, // 1 for outward, -1 for return
-    perpAnchors: new Set(),
+    bbhArmed: false // Manual Adversary Trap
   };
 
-  // Only build DFS plan for classic mode
-  if (simMode === 'classic') {
-    state.traversalOrder = know === 'known'
-      ? buildKnownDFSPlan(state)
-      : buildUnknownDFSPlan(state);
-  } else {
-      // Assign roles based on the research paper
+  // Build the underlying DFS logic array for BOTH modes
+  state.traversalOrder = know === 'known'
+    ? buildKnownDFSPlan(state)
+    : buildUnknownDFSPlan(state);
+
+  if (simMode === 'perpetual') {
       if (agents.length >= 4) {
-          agents[0].role = 'F';
-          agents[1].role = 'I2';
-          agents[2].role = 'I1';
-          agents[3].role = 'L';
+          agents[0].role = 'F'; agents[1].role = 'I2'; agents[2].role = 'I1'; agents[3].role = 'L';
       }
       if (agents.length >= 6) {
-          agents[4].role = 'F1';
-          agents[5].role = 'F2';
+          agents[4].role = 'F1'; agents[5].role = 'F2';
       }
   }
 
@@ -131,7 +129,7 @@ export function buildGraph() {
     logAdd(0, 'system', `Algorithm: ${know === 'known' ? 'Classic BHS (Known)' : 'Classic BHS (Unknown)'}`);
   } else {
     logAdd(0, 'system', `Algorithm: Perpetual Exploration (BBH)`);
-    logAdd(0, 'warn', `Note: Perpetual mode runs indefinitely. Agents translate patterns to explore safe nodes.`);
+    logAdd(0, 'warn', `Note: Perpetual mode runs indefinitely. The Byzantine Black Hole will NOT attack until you manually ARM it using the Adversary button.`);
   }
 
   $('runBtn').disabled  = false;
@@ -235,16 +233,14 @@ function buildUnknownDFSPlan(state) {
 
 export function stepSimulation() {
   if (!simState || simState.done) return;
-
-  // Route to the appropriate simulation engine
-  if (simState.mode === 'perpetual') {
-      stepPerpetualSimulation();
-      return;
-  }
-
-  // --- CLASSIC BHS ENGINE ---
   const s = simState;
+
   if (!s.currentOperation) {
+    // In perpetual mode, loop the logical DFS array forever to simulate patrolling
+    if (s.mode === 'perpetual' && s.traversalIndex >= s.traversalOrder.length) {
+        s.traversalIndex = 0; 
+    }
+    
     if (shouldFinish(s)) {
       finishSim(finishWasSuccessful(s));
       return;
@@ -254,11 +250,13 @@ export function stepSimulation() {
 
   const op = s.currentOperation;
   const action = op.actions[op.index++];
+  
   if (!action) {
     logAdd(s.round, 'danger', 'Simulation halted: no valid action was available for the current DFS step.');
     finishSim(false);
     return;
   }
+  
   s.round++;
   s.activeAgentId = action.agentId ?? null;
   setStat('sRound', s.round);
@@ -269,7 +267,7 @@ export function stepSimulation() {
   } else if (action.type === 'lose') {
     loseAgentToBlackHole(action.agentId, op.step.from, op.step.to);
   } else if (action.type === 'markDanger') {
-    logAdd(s.round, 'danger', `Edge (${op.step.from}->${op.step.to}) borders the known black hole; marked DANGEROUS without another loss.`);
+    logAdd(s.round, 'danger', `Edge (${op.step.from}->${op.step.to}) borders the known black hole; marked DANGEROUS to block Anchor.`);
   } else if (action.type === 'markMoveOnly') {
     s.currentNode = op.step.to;
     markCurrentNode(op.step.to);
@@ -296,47 +294,6 @@ export function stepSimulation() {
   }
 }
 
-// --- PERPETUAL EXPLORATION ENGINE (RESEARCH PAPER SHELL) ---
-function stepPerpetualSimulation() {
-  const s = simState;
-  s.round++;
-  s.perpPhaseRound++;
-  setStat('sRound', s.round);
-  
-  // Extract assigned pattern agents
-  const L = s.agents.find(a => a.role === 'L');
-  const I1 = s.agents.find(a => a.role === 'I1');
-  const I2 = s.agents.find(a => a.role === 'I2');
-  const F = s.agents.find(a => a.role === 'F');
-
-  if (!L || !I1 || !I2 || !F) {
-      logAdd(s.round, 'warn', 'Perpetual pattern relies on L, I1, I2, F roles. Waiting for Anchor response.');
-      refreshDisplay();
-      return;
-  }
-
-  // 5-Round TRANSLATE_PATTERN implementation (Path Logic Shell)
-  const phaseStep = s.perpPhaseRound % 5;
-  const currentPos = I1.pos; 
-  
-  // Basic mock of pattern translation
-  if (phaseStep === 1) {
-      logAdd(s.round, 'info', `TRANSLATE_PATTERN (R1): L moves to next node.`);
-  } else if (phaseStep === 2) {
-      logAdd(s.round, 'info', `TRANSLATE_PATTERN (R2): I2 moves forward, L moves back.`);
-  } else if (phaseStep === 3) {
-      logAdd(s.round, 'info', `TRANSLATE_PATTERN (R3): I2 moves back to F, L moves forward.`);
-  } else if (phaseStep === 4) {
-      logAdd(s.round, 'info', `TRANSLATE_PATTERN (R4): F and I2 move forward together.`);
-  } else if (phaseStep === 0) {
-      logAdd(s.round, 'safe', `TRANSLATE_PATTERN (R5): I1 moves forward. Pattern translated.`);
-      // If end of path/depth reached, swap roles:
-      // L -> F, F -> L, I1 -> I2, I2 -> I1
-  }
-
-  refreshDisplay();
-}
-
 function prepareOperation(s, step) {
   if (!step) {
     return { step: { from: s.currentNode, to: s.currentNode }, actions: [{ type: 'noop' }], index: 0 };
@@ -345,7 +302,15 @@ function prepareOperation(s, step) {
   const dangerous = step.to === s.bhNode;
   const actions = [];
 
-  if (dangerous) {
+  // Core paradigm shift: BBH pretends to be safe until Armed.
+  const isLethalBBH = (s.mode === 'classic') || (s.mode === 'perpetual' && s.bbhArmed);
+
+  if (dangerous && isLethalBBH) {
+    if (s.mode === 'perpetual') {
+       s.bbhArmed = false; // The trap springs and resets
+       s.bhLocated = true; // The remaining agents now know
+    }
+
     if (!s.bhLocated) {
       const probes = s.agents
         .filter(a => a.alive && !a.byzantine && a.pos === step.from)
@@ -358,6 +323,7 @@ function prepareOperation(s, step) {
       actions.push({ type: 'markDanger' });
     }
   } else {
+    // Treat as safe (or benign BBH)
     const movers = s.agents.filter(a => a.alive && a.pos === step.from);
     movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
     if (movers.length === 0) {
@@ -401,14 +367,21 @@ function completeOperation(op) {
 
   cyEdge.removeClass('probing');
 
-  if (dangerous) {
+  const isLethalBBH = (s.mode === 'classic') || (s.mode === 'perpetual' && s.bhLocated);
+
+  if (dangerous && isLethalBBH) {
     s.edgeStatus[key] = 'dangerous';
     s.found = true;
     s.bhLocated = true;
     s.currentNode = from;
     cyEdge.addClass('dangerous');
     cyRef.instance.getElementById(`n${to}`).removeClass('blackhole').addClass('revealed');
-    logAdd(s.round, 'danger', `CCP on edge (${from}->${to}): BLACK HOLE DETECTED. Total BH losses: ${s.lostInBH} (target f+1=${s.f + 1}).`);
+    
+    if (s.mode === 'perpetual') {
+        logAdd(s.round, 'warn', `Anchor formed at edge (${from}->${to}). Agents will perpetually explore the remaining component.`);
+    } else {
+        logAdd(s.round, 'danger', `CCP on edge (${from}->${to}): BLACK HOLE DETECTED. Total BH losses: ${s.lostInBH} (target f+1=${s.f + 1}).`);
+    }
     return;
   }
 
@@ -438,7 +411,7 @@ function maybeIdentifyByzantine(from, to) {
 }
 
 function shouldFinish(s) {
-  if (s.mode === 'perpetual') return false; // Perpetual mode never strictly finishes
+  if (s.mode === 'perpetual') return false; 
   if (s.currentOperation) return false;
   if (s.know === 'unknown') return allEdgesClassified(s) || s.traversalIndex >= s.traversalOrder.length;
   return s.traversalIndex >= s.traversalOrder.length || s.bhLocated;
@@ -469,7 +442,7 @@ function refreshDisplay() {
 }
 
 function progressPercent(s) {
-  if (s.mode === 'perpetual') return 100; // Progress is continuous
+  if (s.mode === 'perpetual') return 100; 
   if (s.know === 'unknown') {
     const classified = Object.values(s.edgeStatus).filter(status => status !== 'unknown').length;
     return Math.min(100, classified / s.edges.length * 100);
