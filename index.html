@@ -22,6 +22,7 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     <span class="badge badge-byz">BYZANTINE AGENTS</span>
     <span class="badge badge-bh">BLACK HOLE</span>
     <span class="badge badge-safe">ICDCS 2025</span>
+    <span class="badge badge-safe">BBH PERPETUAL</span>
   </div>
   <button class="panel-toggle" id="panelToggle" type="button" aria-controls="simControls simStatus" aria-expanded="true" title="Hide panels">
     <span class="panel-toggle-icon" aria-hidden="true"><span></span><span></span><span></span></span>
@@ -32,10 +33,18 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
 
 <div class="main">
 
+  <!-- LEFT PANEL -->
   <div class="left-panel" id="simControls">
-    <div class="config-scroll">
-      <div class="section-title">// GRAPH CONFIG</div>
-      <div class="controls">
+    <div class="section-title">// GRAPH CONFIG</div>
+    <div class="controls">
+
+      <label>
+        SIMULATION GOAL
+        <select id="simMode">
+          <option value="classic">Locate Black Hole (Classic)</option>
+          <option value="perpetual">Perpetual Exploration (BBH)</option>
+        </select>
+      </label>
 
       <label>
         GRAPH TOPOLOGY
@@ -46,6 +55,7 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
           <option value="grid">Grid</option>
           <option value="tree">Balanced Tree</option>
           <option value="star">Star</option>
+          <option value="path">Path</option>
         </select>
       </label>
 
@@ -75,17 +85,9 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         </select>
       </label>
 
-      <label>
-        SIMULATION MODE
-        <select id="simMode">
-          <option value="find-bbh">Find-BBH (BHS)</option>
-          <option value="perp-exp-bbh">PerpExploration-BBH</option>
-          <option value="perp-exp-bbh-home">PerpExploration-BBH-Home</option>
-        </select>
-      </label>
-
       <div class="formula-box" id="formulaBox">
-        </div>
+        — configure above —
+      </div>
 
       <div class="sep"></div>
 
@@ -99,11 +101,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         </select>
       </label>
 
-      <label>
-        SAFE MEMORY TTL — <span class="val-display" id="memoryTtlVal">8</span>
-        <input type="range" id="memoryTTL" min="4" max="24" value="8">
-      </label>
-
       <div class="btn-row">
         <button class="btn btn-primary" id="buildBtn">BUILD GRAPH</button>
         <button class="btn btn-warn"    id="resetBtn">RESET</button>
@@ -111,40 +108,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
       <button class="btn btn-primary" id="runBtn" disabled>▶ RUN SIMULATION</button>
       <button class="btn btn-danger"  id="stepBtn" disabled>STEP →</button>
 
-      </div>
-
-      <div class="section-title">// ADVERSARY CONTROL</div>
-      <div class="controls" style="padding-top: 8px;">
-      
-      <label style="flex-direction: row; align-items: center; cursor: pointer;">
-        <input type="checkbox" id="advViewToggle" checked>
-        <span>Adversary View</span>
-      </label>
-
-      <label style="margin-top: 8px;">
-        BBH CONTROL MODE
-        <select id="bbhControlMode">
-          <option value="manual">Manual</option>
-          <option value="n-rounds">Every N rounds</option>
-          <option value="m-agents">When &ge; M agents on BH</option>
-        </select>
-      </label>
-
-      <label id="bbhNContainer" style="display:none;">
-        N (Rounds)
-        <input type="number" id="bbhN" value="5" min="1" style="background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px; font-family: var(--font-mono);">
-      </label>
-
-      <label id="bbhMContainer" style="display:none;">
-        M (Agents)
-        <input type="number" id="bbhM" value="2" min="1" style="background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px; font-family: var(--font-mono);">
-      </label>
-
-      <label style="flex-direction: row; align-items: center; margin-top: 8px; cursor: pointer;">
-        <input type="checkbox" id="bbhActiveNow">
-        <span style="color: var(--danger); font-weight: bold;">BBH active now</span>
-      </label>
-      </div>
     </div>
 
     <div class="legend">
@@ -155,10 +118,10 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
       <div class="legend-item"><div class="dot dot-safe"></div>SAFE NODE</div>
       <div class="legend-item"><div class="dot dot-home"></div>HOMEBASE</div>
       <div class="legend-item"><div class="dot dot-unexplored"></div>UNEXPLORED</div>
-      <div class="legend-item"><div class="dot dot-expired"></div>EXPIRED EDGE</div>
     </div>
   </div>
 
+  <!-- GRAPH -->
   <div class="graph-area">
     <div id="cy"></div>
     <div id="agentLayer" aria-hidden="true"></div>
@@ -170,6 +133,7 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     <div id="tooltip"></div>
   </div>
 
+  <!-- RIGHT PANEL -->
   <div class="right-panel" id="simStatus">
     <div class="stats-grid">
       <div class="stat-cell">
@@ -195,10 +159,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
       <div class="stat-cell">
         <div class="stat-label">EDGES DANGER</div>
         <div class="stat-val sv-red" id="sEdgeDanger">0</div>
-      </div>
-      <div class="stat-cell">
-        <div class="stat-label">EDGES EXPIRED</div>
-        <div class="stat-val sv-yellow" id="sEdgeExpired">0</div>
       </div>
     </div>
 
@@ -242,6 +202,6 @@ themeToggle.onclick = () => {
 };
 syncThemeToggle();
 </script>
-<footer class="footer-credit">Developed by Vansh Gupta v2.8</footer>
+<footer class="footer-credit">Developed by Vansh Gupta</footer>
 </body>
 </html>

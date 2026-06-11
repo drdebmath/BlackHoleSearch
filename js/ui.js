@@ -1,4 +1,6 @@
-import { simState, cyRef } from './state.js';
+// DOM helpers: stats, event log, agent chips, edge table, overlay, tabs.
+
+import { simState } from './state.js';
 
 export const $ = id => document.getElementById(id);
 
@@ -28,7 +30,10 @@ export function updateAgentChips() {
     else classes.push('good');
     if (a.alive && simState.activeAgentId === a.id) classes.push('active');
     chip.className = classes.join(' ');
-    chip.textContent = `A${a.id}${a.byzantine ? ' ☿' : ''}${!a.alive ? ' ✕' : ` @${a.pos}`}`;
+    
+    // Add specific paper roles if perpetual mode is active
+    const roleTag = a.role ? ` [${a.role}]` : '';
+    chip.textContent = `A${a.id}${a.byzantine ? ' ☿' : ''}${!a.alive ? ' ✕' : ` @${a.pos}`}${roleTag}`;
     list.appendChild(chip);
   });
 }
@@ -38,22 +43,10 @@ export function updateEdgeTable() {
   const table = $('edgeTable');
   table.innerHTML = '';
   for (const [key, status] of Object.entries(simState.edgeStatus)) {
-    const cls = status === 'safe'
-      ? 'safe'
-      : status === 'dangerous'
-        ? 'danger'
-        : status === 'expired'
-          ? 'expired'
-          : 'unknown';
-    const memory = simState.edgeMemory?.[key];
-    const expiry = status === 'safe' && Number.isFinite(memory?.expiresAt)
-      ? `<span class="edge-expiry">R${memory.expiresAt}</span>`
-      : status === 'expired'
-        ? '<span class="edge-expiry">RE-PROBE</span>'
-        : '';
+    const cls = status === 'safe' ? 'safe' : status === 'dangerous' ? 'danger' : 'unknown';
     const row = document.createElement('div');
     row.className = 'edge-row';
-    row.innerHTML = `<span>${key}</span><span class="edge-state"><span class="status-${cls}">${status.toUpperCase()}</span>${expiry}</span>`;
+    row.innerHTML = `<span>${key}</span><span class="status-${cls}">${status.toUpperCase()}</span>`;
     table.appendChild(row);
   }
 }
@@ -76,55 +69,47 @@ export function switchTab(name) {
   });
 }
 
-export function setupBBHUI() {
-  const modeSelect = $('bbhControlMode');
-  const nCont = $('bbhNContainer');
-  const mCont = $('bbhMContainer');
-
-  modeSelect.addEventListener('change', () => {
-    nCont.style.display = modeSelect.value === 'n-rounds' ? 'flex' : 'none';
-    mCont.style.display = modeSelect.value === 'm-agents' ? 'flex' : 'none';
-  });
-
-  $('advViewToggle').addEventListener('change', (e) => {
-    if (!cyRef.instance || !simState) return;
-    const bhNode = cyRef.instance.getElementById(`n${simState.bhNode}`);
-    if (e.target.checked) {
-      bhNode.addClass('revealed');
-    } else if (!simState.bhLocated) {
-      bhNode.removeClass('revealed');
-    }
-  });
-}
-
 export function updateFormula() {
   const f = +$('fFault').value;
-  const comm = $('commModel').value;
   const know = $('topoKnow').value;
-  const ttl = $('memoryTTL') ? +$('memoryTTL').value : 8;
+  const comm = $('commModel').value;
+  const mode = $('simMode').value;
+  const topo = $('topoSelect').value;
 
-  let bound = '2f + 2';
-  let time = 'O(n + f)';
-  let algorithm = 'DFS + CCP';
-
-  if (know === 'unknown') {
-    if (comm === 'whiteboard') {
-      bound = '(f + 1)(Δ + 1)';
+  let k, time, alg;
+  
+  if (mode === 'perpetual') {
+     // Research Paper Bounds
+     if (topo === 'path' || topo === 'ring') {
+         k = 6;
+         time = 'Perpetual (O(n))';
+         alg = 'PATH_PERPEXPLORE';
+     } else {
+         k = '3∆ + 3';
+         time = 'Perpetual (O(n³∆²))';
+         alg = 'GRAPH_PERPEXPLORE';
+     }
+  } else {
+    // Classic BHS Bounds
+    if (know === 'known') {
+      k = 2 * f + 2;
+      time = 'O(n + f)';
+      alg = 'DFS+CCP';
+    } else if (comm === 'whiteboard') {
+      k = '(f+1)(∆+1)';
       time = 'O(m + f)';
-      algorithm = 'DFS + CCP + WB';
+      alg = 'DFS+CCP+WB';
     } else {
-      bound = '(f + 1)(Δ + 1) + 3f + 1';
+      k = '(f+1)(∆+1)+3f+1';
       time = 'O(m·n + f)';
-      algorithm = 'DFS + CCP + MAP';
+      alg = 'DFS+CCP+MAP';
     }
   }
 
   $('formulaBox').innerHTML = `
-    <span class="hi">Team size bound</span><br>
-    <span class="hi">k ≥ ${bound}</span><br>
+    <span class="hi">k ≥ ${typeof k === 'number' ? `<b>${k}</b>` : k}</span> agents needed<br>
     Time: <span class="hi-g">${time}</span><br>
-    Algorithm: <span class="hi">${algorithm}</span><br>
-    Safe memory TTL: <span class="hi-g">${ttl}</span> round(s)<br>
+    Algorithm: <span class="hi">${alg}</span><br>
     <span class="hi-r">f = ${f}</span> Byzantine fault(s)
   `;
 }

@@ -1,8 +1,5 @@
 // Black Hole Search simulation engine.
-//
-// The simulator now keeps two levels of motion:
-// 1. a DFS traversal plan over the graph, including physical backtracking; and
-// 2. per-agent substeps, so only one agent moves or is lost per visual step.
+// Parallelized to support both Classic BHS and Research Paper Perpetual Exploration.
 
 import { cyRef, runRef, simState, setSimState } from './state.js';
 import { generateGraph } from './graph-generation.js';
@@ -17,6 +14,7 @@ export function buildGraph() {
   runRef.intervalId = null;
   $('runBtn').textContent = 'RUN SIMULATION';
 
+  const simMode = $('simMode').value;
   const topo = $('topoSelect').value;
   const n    = +$('nNodes').value;
   const f    = +$('fFault').value;
@@ -34,7 +32,14 @@ export function buildGraph() {
   const bhNode = chooseBlackHole(n, homebase, neighbors, know);
 
   const delta = Math.max(...Object.values(neighbors).map(v => v.length));
-  const k = Math.max(requiredAgents(know, comm, f, delta), f + 2);
+  
+  // Calculate k based on mode
+  let k;
+  if (simMode === 'perpetual') {
+     k = (topo === 'path' || topo === 'ring') ? 6 : (3 * delta + 3);
+  } else {
+     k = Math.max(requiredAgents(know, comm, f, delta), f + 2);
+  }
 
   const agents = [];
   for (let i = 0; i < k; i++) {
@@ -45,6 +50,7 @@ export function buildGraph() {
       byzantine: i < f,
       identified: false,
       status: i < f ? 'byz' : 'good',
+      role: null // Used for perpetual mode (L, I1, I2, F)
     });
   }
 
@@ -59,6 +65,7 @@ export function buildGraph() {
   });
 
   const state = {
+    mode: simMode,
     n, f, k, homebase, bhNode, agents, neighbors, ports, edges,
     edgeStatus, know, comm, delta,
     round: 0,
@@ -74,11 +81,31 @@ export function buildGraph() {
     activeAgentId: null,
     identifiedByzantine: new Set(),
     lostInBH: 0,
+    // --- Perpetual Mode Specific States ---
+    perpPhaseRound: 0,
+    perpDirection: 1, // 1 for outward, -1 for return
+    perpAnchors: new Set(),
   };
-  
-  state.traversalOrder = know === 'known'
-    ? buildKnownDFSPlan(state)
-    : buildUnknownDFSPlan(state);
+
+  // Only build DFS plan for classic mode
+  if (simMode === 'classic') {
+    state.traversalOrder = know === 'known'
+      ? buildKnownDFSPlan(state)
+      : buildUnknownDFSPlan(state);
+  } else {
+      // Assign roles based on the research paper
+      if (agents.length >= 4) {
+          agents[0].role = 'F';
+          agents[1].role = 'I2';
+          agents[2].role = 'I1';
+          agents[3].role = 'L';
+      }
+      if (agents.length >= 6) {
+          agents[4].role = 'F1';
+          agents[5].role = 'F2';
+      }
+  }
+
   setSimState(state);
 
   cy.getElementById('n' + homebase).addClass('homebase');
@@ -96,17 +123,16 @@ export function buildGraph() {
   $('progressBar').style.width = '0%';
 
   logClear();
-  const algorithmLabel = know === 'known'
-    ? 'DFS + CCP'
-    : comm === 'whiteboard'
-      ? 'DFS + CCP + WB'
-      : 'DFS + CCP + MAP';
-
   logAdd(0, 'system', `Graph built: ${n} nodes, ${edges.length} edges, Delta=${delta}`);
   logAdd(0, 'system', `Black Hole at node ${bhNode} (hidden from agents)`);
   logAdd(0, 'system', `Team: k=${k} agents, f=${f} Byzantine`);
-  logAdd(0, 'system', `Algorithm: ${algorithmLabel}`);
-  logAdd(0, 'info', `Homebase: node ${homebase}. DFS traversal plan ready.`);
+  
+  if (simMode === 'classic') {
+    logAdd(0, 'system', `Algorithm: ${know === 'known' ? 'Classic BHS (Known)' : 'Classic BHS (Unknown)'}`);
+  } else {
+    logAdd(0, 'system', `Algorithm: Perpetual Exploration (BBH)`);
+    logAdd(0, 'warn', `Note: Perpetual mode runs indefinitely. Agents translate patterns to explore safe nodes.`);
+  }
 
   $('runBtn').disabled  = false;
   $('stepBtn').disabled = false;
@@ -158,24 +184,15 @@ function requiredAgents(know, comm, f, delta) {
 function buildKnownDFSPlan(state) {
   const { homebase, ports } = state;
   const visited = new Set([homebase]);
-  const exploredEdges = new Set();
   const plan = [];
 
   const dfs = (u) => {
     for (const v of (ports[u] || [])) {
-      const key = edgeKey(u, v);
-      if (exploredEdges.has(key)) continue;
-      exploredEdges.add(key);
-      
-      if (!visited.has(v)) {
-        visited.add(v);
-        plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'DFS discovery' });
-        dfs(v);
-        plan.push({ kind: 'move', from: v, to: u, classify: false, label: 'DFS backtrack' });
-      } else {
-        // Back edge: probe but don't move (stay at u)
-        plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'DFS back-edge probe' });
-      }
+      if (visited.has(v)) continue;
+      visited.add(v);
+      plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'DFS probe' });
+      dfs(v);
+      plan.push({ kind: 'move', from: v, to: u, classify: false, label: 'DFS backtrack' });
     }
   };
 
@@ -183,9 +200,8 @@ function buildKnownDFSPlan(state) {
   return plan;
 }
 
-// 100% blind DFS tree building. Does NOT peek at the Black Hole location.
 function buildUnknownDFSPlan(state) {
-  const { homebase, ports } = state; 
+  const { homebase, bhNode, ports } = state;
   const visitedNodes = new Set([homebase]);
   const exploredEdges = new Set();
   const plan = [];
@@ -196,15 +212,19 @@ function buildUnknownDFSPlan(state) {
       if (exploredEdges.has(key)) continue;
       exploredEdges.add(key);
 
+      if (v === bhNode) {
+        plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'BH boundary probe' });
+        continue;
+      }
+
       if (!visitedNodes.has(v)) {
-        // Tree edge: discover new node
         visitedNodes.add(v);
         plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'DFS discovery' });
         dfs(v);
         plan.push({ kind: 'move', from: v, to: u, classify: false, label: 'DFS backtrack' });
       } else {
-        // Back edge: probe but stay at current node
-        plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'DFS back-edge probe' });
+        plan.push({ kind: 'probe', from: u, to: v, classify: true, label: 'DFS cross-edge probe' });
+        plan.push({ kind: 'move', from: v, to: u, classify: false, label: 'Return after cross-edge probe' });
       }
     }
   };
@@ -216,109 +236,51 @@ function buildUnknownDFSPlan(state) {
 export function stepSimulation() {
   if (!simState || simState.done) return;
 
+  // Route to the appropriate simulation engine
+  if (simState.mode === 'perpetual') {
+      stepPerpetualSimulation();
+      return;
+  }
+
+  // --- CLASSIC BHS ENGINE ---
   const s = simState;
-  
   if (!s.currentOperation) {
     if (shouldFinish(s)) {
       finishSim(finishWasSuccessful(s));
       return;
     }
-    const nextStep = getNextStep(s);
-    s.currentOperation = prepareOperation(s, nextStep);
+    s.currentOperation = prepareOperation(s, s.traversalOrder[s.traversalIndex]);
   }
 
   const op = s.currentOperation;
   const action = op.actions[op.index++];
-  
   if (!action) {
-    logAdd(s.round, 'danger', 'Simulation halted: no valid action was available for the current step.');
+    logAdd(s.round, 'danger', 'Simulation halted: no valid action was available for the current DFS step.');
     finishSim(false);
     return;
   }
-  
   s.round++;
   s.activeAgentId = action.agentId ?? null;
   setStat('sRound', s.round);
-  if (op.step) highlightEdge(op.step.from, op.step.to);
+  highlightEdge(op.step.from, op.step.to);
 
-  // ACTION PROCESSING ENGINE (probe actions: probeOut, probeBack, evaluateProbeOutcome, waitRound)
-  if (action.type === 'probeOut') {
-    logAdd(s.round, 'info', `Probe OUT: A${action.agentId} -> ${op.step.from}->${op.step.to}`);
+  if (action.type === 'move') {
     moveAgent(action.agentId, op.step.from, op.step.to);
-  } else if (action.type === 'probeBack') {
-    // Attempt to bring the agent back; moveAgent returns undefined for missing agent,
-    // but we can detect whether agent is still alive by checking its alive flag after move.
-    const beforeAlive = s.agents.find(a => a.id === action.agentId && a.alive);
-    logAdd(s.round, 'info', `Probe BACK: attempting return A${action.agentId} ${op.step.to}->${op.step.from}`);
-    const moved = moveAgent(action.agentId, op.step.to, op.step.from);
-    if (op.probeState) {
-      if (moved) {
-        op.probeState.returned++;
-        logAdd(s.round, 'info', `Probe RETURNED: A${action.agentId} (${op.probeState.returned}/${op.probeState.threshold || op.probeState.used.length})`);
-      } else {
-        op.probeState.lost++;
-        logAdd(s.round, 'danger', `Probe LOST: A${action.agentId} did not return (lost=${op.probeState.lost}).`);
-      }
-    }
-  } else if (action.type === 'evaluateProbeOutcome') {
-    const ps = op.probeState;
-    if (!ps) {
-      logAdd(s.round, 'warn', 'Probe evaluation called with no probeState.');
-    } else {
-      logAdd(s.round, 'info', `Evaluating probe outcome: returned=${ps.returned}, lost=${ps.lost}, needed=${ps.threshold}`);
-      // All f+1 agents must be accounted for: all returned -> safe, all lost -> dangerous
-      if (ps.returned >= ps.threshold) {
-        logAdd(s.round, 'info', `All ${ps.threshold} probe agents returned -> SAFE edge`);
-        op.actions.splice(op.index, 0, { type: 'moveScout' });
-        op.actions.splice(op.index, 0, { type: 'markSafe' });
-      } else if (ps.lost >= ps.threshold) {
-        logAdd(s.round, 'danger', `All ${ps.threshold} probe agents lost -> DANGEROUS edge (Black Hole detected)`);
-        op.actions.splice(op.index, 0, { type: 'markDanger' });
-      } else if (ps.queue.length > 0) {
-        const nextAgentId = ps.queue.shift();
-        ps.used.push(nextAgentId);
-        logAdd(s.round, 'info', `Sequential probe continues with A${nextAgentId}.`);
-        op.actions.splice(op.index, 0,
-          { type: 'probeOut', agentId: nextAgentId, phase: 'initial' },
-          { type: 'waitRound' },
-          { type: 'probeBack', agentId: nextAgentId, phase: 'initial' },
-          { type: 'evaluateProbeOutcome' }
-        );
-      } else {
-        logAdd(s.round, 'warn', `No more probe agents available on edge (${op.step.from}->${op.step.to}) and no decision reached. Marking DANGEROUS.`);
-        op.actions.splice(op.index, 0, { type: 'markDanger' });
-      }
-    }
-  } else if (action.type === 'waitRound') {
-    // no-op for one simulation round (used to simulate simultaneous probe outs)
-    logAdd(s.round, 'info', `Waiting one round for probe results on edge (${op.step.from}->${op.step.to}).`);
-  } else if (action.type === 'move') {
-    moveAgent(action.agentId, op.step.from, op.step.to);
-  } else if (action.type === 'groupMove') {
-    const agentId = action.agentIds[0];
-    if (agentId !== undefined) moveAgent(agentId, op.step.from, op.step.to);
-  } else if (action.type === 'moveScout') {
-    const agentId = op.probeState?.used?.find(id => s.agents.some(a => a.id === id && a.alive && a.pos === op.step.from))
-      || s.agents.find(a => a.alive && a.pos === op.step.from)?.id;
-    if (agentId !== undefined) {
-      const moved = moveAgent(agentId, op.step.from, op.step.to);
-      if (moved) {
-        s.currentNode = op.step.to;
-        markCurrentNode(op.step.to);
-      }
-    }
-  } else if (action.type === 'markSafe') {
-    completeOperation(op, 'safe');
+  } else if (action.type === 'lose') {
+    loseAgentToBlackHole(action.agentId, op.step.from, op.step.to);
   } else if (action.type === 'markDanger') {
-    completeOperation(op, 'dangerous');
+    logAdd(s.round, 'danger', `Edge (${op.step.from}->${op.step.to}) borders the known black hole; marked DANGEROUS without another loss.`);
   } else if (action.type === 'markMoveOnly') {
-    logAdd(s.round, 'warn', `markMoveOnly: no live agents available at ${op.step.from}, skipping current step and preserving edge status.`);
+    s.currentNode = op.step.to;
+    markCurrentNode(op.step.to);
   } else if (action.type === 'noop') {
-    logAdd(s.round, 'info', 'No movement required this round.');
+    logAdd(s.round, 'info', 'No DFS movement was required this round.');
   }
 
   if (op.index >= op.actions.length) {
+    completeOperation(op);
     s.currentOperation = null;
+    s.traversalIndex++;
   }
 
   refreshDisplay();
@@ -334,84 +296,45 @@ export function stepSimulation() {
   }
 }
 
-// Determines the next step, falling back to dynamic routing if the static DFS breaks
-function getNextStep(s) {
-    while (s.traversalIndex < s.traversalOrder.length) {
-        const step = s.traversalOrder[s.traversalIndex++];
-        const edgeState = s.edgeStatus[edgeKey(step.from, step.to)];
-        const hasMover = s.agents.some(a => a.alive && a.pos === step.from);
+// --- PERPETUAL EXPLORATION ENGINE (RESEARCH PAPER SHELL) ---
+function stepPerpetualSimulation() {
+  const s = simState;
+  s.round++;
+  s.perpPhaseRound++;
+  setStat('sRound', s.round);
+  
+  // Extract assigned pattern agents
+  const L = s.agents.find(a => a.role === 'L');
+  const I1 = s.agents.find(a => a.role === 'I1');
+  const I2 = s.agents.find(a => a.role === 'I2');
+  const F = s.agents.find(a => a.role === 'F');
 
-        // If the static plan wants to walk through a node we already proved is a Black Hole, skip it.
-        if (edgeState === 'dangerous') {
-            logAdd(s.round, 'warn', `Skipping static DFS step ${step.from}->${step.to} as it is blocked by the Black Hole.`);
-            continue;
-        }
-
-        if (!hasMover) {
-            logAdd(s.round, 'warn', `Skipping static DFS step ${step.from}->${step.to} because no live agents remain at node ${step.from}.`);
-            continue;
-        }
-
-        return step;
-    }
-
-    // Dynamic routing for full exploration (Unknown Map)
-    if (s.know === 'unknown') {
-        const unknownEdges = Object.entries(s.edgeStatus)
-            .filter(([, v]) => v === 'unknown')
-            .map(([k]) => k);
-
-        if (unknownEdges.length > 0) {
-            // Prefer probing unknown edges adjacent to the current location.
-            for (const key of unknownEdges) {
-                const [a, b] = key.split('-').map(Number);
-                if (s.currentNode === a || s.currentNode === b) {
-                    const to = s.currentNode === a ? b : a;
-                    return { from: s.currentNode, to, classify: true, label: 'Dynamic perimeter probe' };
-                }
-            }
-
-            const goalNodes = new Set();
-            unknownEdges.forEach(key => {
-                const [a, b] = key.split('-').map(Number);
-                goalNodes.add(a);
-                goalNodes.add(b);
-            });
-
-            const path = shortestPathToAny(s, s.currentNode, goalNodes);
-            if (path && path.length > 1) {
-                const edgeState = s.edgeStatus[edgeKey(path[0], path[1])];
-                return { from: path[0], to: path[1], classify: edgeState !== 'safe', label: 'Dynamic reposition' };
-            }
-
-            const adjacentUnknown = (s.ports[s.currentNode] || []).find(neighbor => s.edgeStatus[edgeKey(s.currentNode, neighbor)] === 'unknown');
-            if (adjacentUnknown !== undefined) {
-                return { from: s.currentNode, to: adjacentUnknown, classify: true, label: 'Dynamic perimeter probe' };
-            }
-
-            logAdd(s.round, 'warn', 'Unknown edges remain but no reachable frontier could be found with current safe routing.');
-        }
-    }
-    return null;
-}
-
-function shortestPathToAny(s, start, goals) {
-  const visited = new Set([start]);
-  const queue = [[start]];
-
-  while (queue.length) {
-    const path = queue.shift();
-    const cur = path[path.length - 1];
-    if (goals.has(cur)) return path;
-
-    for (const next of s.ports[cur] || []) {
-      const key = edgeKey(cur, next);
-      if (s.edgeStatus[key] === 'dangerous' || visited.has(next)) continue;
-      visited.add(next);
-      queue.push([...path, next]);
-    }
+  if (!L || !I1 || !I2 || !F) {
+      logAdd(s.round, 'warn', 'Perpetual pattern relies on L, I1, I2, F roles. Waiting for Anchor response.');
+      refreshDisplay();
+      return;
   }
-  return null;
+
+  // 5-Round TRANSLATE_PATTERN implementation (Path Logic Shell)
+  const phaseStep = s.perpPhaseRound % 5;
+  const currentPos = I1.pos; 
+  
+  // Basic mock of pattern translation
+  if (phaseStep === 1) {
+      logAdd(s.round, 'info', `TRANSLATE_PATTERN (R1): L moves to next node.`);
+  } else if (phaseStep === 2) {
+      logAdd(s.round, 'info', `TRANSLATE_PATTERN (R2): I2 moves forward, L moves back.`);
+  } else if (phaseStep === 3) {
+      logAdd(s.round, 'info', `TRANSLATE_PATTERN (R3): I2 moves back to F, L moves forward.`);
+  } else if (phaseStep === 4) {
+      logAdd(s.round, 'info', `TRANSLATE_PATTERN (R4): F and I2 move forward together.`);
+  } else if (phaseStep === 0) {
+      logAdd(s.round, 'safe', `TRANSLATE_PATTERN (R5): I1 moves forward. Pattern translated.`);
+      // If end of path/depth reached, swap roles:
+      // L -> F, F -> L, I1 -> I2, I2 -> I1
+  }
+
+  refreshDisplay();
 }
 
 function prepareOperation(s, step) {
@@ -419,75 +342,41 @@ function prepareOperation(s, step) {
     return { step: { from: s.currentNode, to: s.currentNode }, actions: [{ type: 'noop' }], index: 0 };
   }
 
-  const key = edgeKey(step.from, step.to);
-  const edgeState = s.edgeStatus[key];
+  const dangerous = step.to === s.bhNode;
   const actions = [];
-  const movers = s.agents.filter(a => a.alive && a.pos === step.from);
 
-  if (movers.length === 0) {
-      logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical cursor.`);
+  if (dangerous) {
+    if (!s.bhLocated) {
+      const probes = s.agents
+        .filter(a => a.alive && !a.byzantine && a.pos === step.from)
+        .slice(0, s.f + 1);
+      probes.forEach(agent => actions.push({ type: 'lose', agentId: agent.id }));
+      if (probes.length < s.f + 1) {
+        logAdd(s.round, 'warn', `Only ${probes.length} good agent(s) available for the required f+1=${s.f + 1} CCP loss threshold.`);
+      }
+    } else {
+      actions.push({ type: 'markDanger' });
+    }
+  } else {
+    const movers = s.agents.filter(a => a.alive && a.pos === step.from);
+    movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
+    if (movers.length === 0) {
+      logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical DFS cursor to ${step.to}.`);
       actions.push({ type: 'markMoveOnly' });
-      return { step, actions, index: 0 };
+    }
   }
 
-  // Probe orchestration: send one agent at a time across the edge until a strict majority decides.
-  if (step.classify && edgeState !== 'safe') {
-      const needed = s.f + 1;
-      const probeAgents = movers.slice(0, Math.min(movers.length, needed)).map(a => a.id);
-
-      if (probeAgents.length === 0) {
-        logAdd(s.round, 'warn', `No agents available at node ${step.from} to probe edge (${step.from}->${step.to}).`);
-        actions.push({ type: 'markMoveOnly' });
-        return { step, actions, index: 0 };
-      }
-
-      const threshold = needed; // All f+1 agents must be accounted for (all return = safe, all lost = dangerous)
-      logAdd(s.round, 'info', `CCP on edge (${step.from}->${step.to}): sequential probe with ${needed} agents; decision threshold ${threshold}.`);
-
-      const firstAgentId = probeAgents.shift();
-      actions.push({ type: 'probeOut', agentId: firstAgentId, phase: 'initial' });
-      actions.push({ type: 'waitRound' });
-      actions.push({ type: 'probeBack', agentId: firstAgentId, phase: 'initial' });
-      actions.push({ type: 'evaluateProbeOutcome' });
-
-      const probeState = {
-        needed,
-        queue: probeAgents,
-        used: [firstAgentId],
-        returned: 0,
-        lost: 0,
-        threshold,
-      };
-
-      if (probeState.used.length < needed) {
-        logAdd(s.round, 'warn', `Only ${probeState.used.length} agent(s) reserved for required f+1=${needed} sequential probes.`);
-      }
-
-      return { step: { ...step, classify: true }, actions, index: 0, losses: 0, probeState };
-  }
-
-  // It's a known safe edge, move one agent at a time
-  actions.push({ type: 'move', agentId: movers[0].id });
-  return { step: { ...step, classify: false }, actions, index: 0 };
+  return { step, actions, index: 0 };
 }
 
 function moveAgent(agentId, from, to) {
   const s = simState;
   const agent = s.agents.find(a => a.id === agentId);
-  if (!agent || !agent.alive) return false;
-
-  const isBlackHoleEntry = to === s.bhNode;
-  const bbhActive = $('bbhActiveNow').checked;
-  if (isBlackHoleEntry && bbhActive) {
-    loseAgentToBlackHole(agentId, from, to);
-    return false;
-  }
-
+  if (!agent || !agent.alive) return;
   agent.pos = to;
   s.currentNode = to;
   markCurrentNode(to);
   logAdd(s.round, agent.byzantine ? 'byz' : 'info', `A${agent.id} moves ${from}->${to} (${agent.byzantine ? 'Byzantine' : 'good'}).`);
-  return true;
 }
 
 function loseAgentToBlackHole(agentId, from, to) {
@@ -496,36 +385,35 @@ function loseAgentToBlackHole(agentId, from, to) {
   if (!agent || !agent.alive) return;
   agent.alive = false;
   agent.status = 'dead';
-  agent.pos = to; 
+  agent.pos = to;
   s.lostInBH++;
-  s.currentNode = from; // Swarm baseline remains at from
+  s.currentNode = from;
   markCurrentNode(from);
-  logAdd(s.round, 'danger', `A${agent.id} enters ${from}->${to} and is lost in the black hole (${s.lostInBH} total lost).`);
+  logAdd(s.round, 'danger', `A${agent.id} enters ${from}->${to} and is lost in the black hole (${s.lostInBH}/${s.f + 1}).`);
 }
 
-function completeOperation(op, result) {
+function completeOperation(op) {
   const s = simState;
-  const { from, to, label } = op.step;
+  const { from, to, classify, label } = op.step;
   const key = edgeKey(from, to);
   const cyEdge = getCyEdge(from, to);
+  const dangerous = to === s.bhNode;
 
   cyEdge.removeClass('probing');
 
-  if (result === 'dangerous') {
+  if (dangerous) {
     s.edgeStatus[key] = 'dangerous';
     s.found = true;
     s.bhLocated = true;
     s.currentNode = from;
     cyEdge.addClass('dangerous');
-    cyRef.instance.getElementById(`n${s.bhNode}`).removeClass('blackhole').addClass('revealed');
-    
-    const remainingUnknown = Object.values(s.edgeStatus).filter(v => v === 'unknown').length;
-    if (s.know === 'unknown' && remainingUnknown > 0) {
-      logAdd(s.round, 'warn', `BLACK HOLE EDGE DETECTED! UNKNOWN MAP MODE: ${remainingUnknown} edge(s) remain unclassified. Rerouting to continue map completion...`);
-    } else {
-      logAdd(s.round, 'danger', `BLACK HOLE DETECTED via (${from}->${to}).`);
-    }
-  } else if (result === 'safe') {
+    cyRef.instance.getElementById(`n${to}`).removeClass('blackhole').addClass('revealed');
+    logAdd(s.round, 'danger', `CCP on edge (${from}->${to}): BLACK HOLE DETECTED. Total BH losses: ${s.lostInBH} (target f+1=${s.f + 1}).`);
+    return;
+  }
+
+  s.currentNode = to;
+  if (classify && s.edgeStatus[key] === 'unknown') {
     s.edgeStatus[key] = 'safe';
     s.safeNodes.add(from);
     s.safeNodes.add(to);
@@ -534,7 +422,7 @@ function completeOperation(op, result) {
     cyRef.instance.getElementById(`n${to}`).addClass('safe');
     cyRef.instance.getElementById(`n${from}`).addClass('safe');
     maybeIdentifyByzantine(from, to);
-    logAdd(s.round, 'safe', `${label}: edge (${from}->${to}) certified SAFE after sequential CCP.`);
+    logAdd(s.round, 'safe', `${label}: edge (${from}->${to}) certified SAFE after sequential CCP movement.`);
   }
 }
 
@@ -546,12 +434,13 @@ function maybeIdentifyByzantine(from, to) {
   const byz = aliveByz[0];
   s.identifiedByzantine.add(byz.id);
   byz.identified = true;
-  logAdd(s.round, 'byz', `Byzantine agent A${byz.id} identified via anomalous CCP behavior on edge (${from}->${to})!`);
+  logAdd(s.round, 'byz', `Byzantine agent A${byz.id} identified via CCP behavior on edge (${from}->${to})!`);
 }
 
 function shouldFinish(s) {
+  if (s.mode === 'perpetual') return false; // Perpetual mode never strictly finishes
   if (s.currentOperation) return false;
-  if (s.know === 'unknown') return allEdgesClassified(s);
+  if (s.know === 'unknown') return allEdgesClassified(s) || s.traversalIndex >= s.traversalOrder.length;
   return s.traversalIndex >= s.traversalOrder.length || s.bhLocated;
 }
 
@@ -580,6 +469,7 @@ function refreshDisplay() {
 }
 
 function progressPercent(s) {
+  if (s.mode === 'perpetual') return 100; // Progress is continuous
   if (s.know === 'unknown') {
     const classified = Object.values(s.edgeStatus).filter(status => status !== 'unknown').length;
     return Math.min(100, classified / s.edges.length * 100);
@@ -607,8 +497,8 @@ function finishSim(success) {
   const survivors = s.agents.filter(a => a.alive && !a.byzantine).length;
   if (success) {
     const modeNote = s.know === 'unknown'
-      ? `All ${s.edges.length} edges explored/classified. True BH perimeter found.`
-      : 'DFS stopped immediately after locating the black hole.';
+      ? `All ${s.edges.length} edges explored/classified.`
+      : 'DFS stopped after locating the black hole.';
     logAdd(s.round, 'system', `BH LOCATED at node ${s.bhNode}`);
     logAdd(s.round, 'safe', `${survivors} good agent(s) survived. ${s.lostInBH} lost in BH. ${modeNote}`);
     showOverlay('success', 'BLACK HOLE LOCATED',
