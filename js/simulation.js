@@ -32,10 +32,10 @@ export function buildGraph() {
 
   const delta = Math.max(...Object.values(neighbors).map(v => v.length));
   
-  // Calculate team dimension based strictly on selected runtime strategy
+  // Assign agents based strictly on the selected mode
   let k;
   if (simMode === 'bbh_home') {
-    k = (topo === 'tree' || topo === 'ring' || topo === 'star') ? 6 : (3 * delta + 3);
+    k = (topo === 'tree' || topo === 'ring' || topo === 'star' || topo === 'path') ? 6 : (3 * delta + 3);
   } else {
     k = Math.max(requiredAgents(know, comm, f, delta), f + 2);
   }
@@ -50,7 +50,7 @@ export function buildGraph() {
       else if (i === 3) role = 'L';
       else if (i === 4) role = 'F1';
       else if (i === 5) role = 'F2';
-      else role = 'Explorer';
+      else role = 'LG_Explorer';
     }
     agents.push({
       id: i,
@@ -89,11 +89,8 @@ export function buildGraph() {
     activeAgentId: null,
     identifiedByzantine: new Set(),
     lostInBH: 0,
-    // Paper tracking parameters
-    paperSubPhaseRound: 1,
-    paperPhase: 1,
+    // Paper specific parameters
     paperInterventionTriggered: false,
-    paperTargetEdgeIndex: 0,
     paperSequencePlan: []
   };
 
@@ -124,9 +121,9 @@ export function buildGraph() {
   logAdd(0, 'system', `Malicious Black Hole allocated dynamically at target node ID: ${bhNode}`);
   
   if (simMode === 'bbh_home') {
-    logAdd(0, 'info', `Initialized Perpetual Exploration Subsystem. Pattern agents [L, I1, I2, F] mapped successfully.`);
+    logAdd(0, 'info', `Perpetual Exploration (BBH-HOME) activated. Roles [L, I1, I2, F] mapping initialized.`);
   } else {
-    logAdd(0, 'system', `Standard BHS mode enabled. Multi-agent cluster configuration prepared.`);
+    logAdd(0, 'system', `Standard BHS mode enabled. DFS+CCP Multi-agent clustering prepared.`);
   }
 
   $('runBtn').disabled  = false;
@@ -135,16 +132,13 @@ export function buildGraph() {
   updateFormula();
 }
 
-// Generate execution trace matching Section 3.2 and Section 4.2 definitions
 function generatePaperActionPlan(state) {
   const plan = [];
-  const baseOrder = buildKnownDFSPlan(state);
+  const baseOrder = buildKnownDFSPlan(state); // Generate underlying physical paths
   
-  // Phase 1: Establish Initial Exploration Topology Pattern Profile
-  plan.push({ type: 'pattern_create', round: 1, desc: 'MAKE_PATTERN Round 1: L, I1, I2 move outward.' });
-  plan.push({ type: 'pattern_create', round: 2, desc: 'MAKE_PATTERN Round 2: I2 falls back to check context.' });
+  plan.push({ type: 'pattern_create', round: 1, desc: 'MAKE_PATTERN R1' });
+  plan.push({ type: 'pattern_create', round: 2, desc: 'MAKE_PATTERN R2' });
 
-  // Map DFS links to the core translation sequence loops
   baseOrder.forEach((edge, index) => {
     for (let r = 1; r <= 5; r++) {
       plan.push({
@@ -152,8 +146,7 @@ function generatePaperActionPlan(state) {
         round: r,
         edgeIndex: index,
         from: edge.from,
-        to: edge.to,
-        desc: `TRANSLATE_PATTERN Sub-Phase [Edge ${edge.from}->${edge.to}] Round ${r}`
+        to: edge.to
       });
     }
   });
@@ -256,7 +249,7 @@ function buildUnknownDFSPlan(state) {
 export function stepSimulation() {
   if (!simState || simState.done) return;
 
-  // Direct engine execution state into the isolated analytical function if active
+  // Intercept the loop and branch execution based on chosen mode
   if (simState.simMode === 'bbh_home') {
     stepPaperSimulation();
     return;
@@ -315,7 +308,6 @@ export function stepSimulation() {
   }
 }
 
-// Dedicated analytical execution engine processing research paper state configurations
 function stepPaperSimulation() {
   const s = simState;
   
@@ -335,40 +327,40 @@ function stepPaperSimulation() {
   const lAgent = s.agents.find(a => a.role === 'L');
 
   if (step.type === 'pattern_create') {
-    highlightEdge(s.homebase, s.homebase);
+    const firstTranslation = s.paperSequencePlan.find(p => p.type === 'translation_step');
+    const firstTarget = firstTranslation ? firstTranslation.to : s.homebase;
+    highlightEdge(s.homebase, firstTarget);
+
     if (step.round === 1) {
-      if (lAgent) lAgent.pos = 1;
-      if (i1Agent) i1Agent.pos = 1;
-      if (i2Agent) i2Agent.pos = 1;
-      logAdd(s.round, 'info', `${step.desc} [L, I1, I2] transition to neighboring node layout.`);
+      if (lAgent) lAgent.pos = firstTarget;
+      if (i1Agent) i1Agent.pos = firstTarget;
+      if (i2Agent) i2Agent.pos = firstTarget;
+      logAdd(s.round, 'info', `MAKE_PATTERN R1: L, I1, I2 deploy to adjacent node.`);
     } else if (step.round === 2) {
       if (i2Agent) i2Agent.pos = s.homebase;
-      logAdd(s.round, 'info', `${step.desc} Geometric state validation pattern established successfully.`);
+      logAdd(s.round, 'info', `MAKE_PATTERN R2: I2 drops back to construct initial geometric pattern.`);
     }
     s.traversalIndex++;
   } else if (step.type === 'translation_step') {
     const { from, to, round } = step;
-    const isDangerous = to === s.bhNode;
+    const isDangerous = (to === s.bhNode);
     highlightEdge(from, to);
 
     if (s.paperInterventionTriggered) {
-      // Cautious verification subsystem handling trigger protocols (Section 3.2.1)
       const f1 = s.agents.find(a => a.role === 'F1');
       const f2 = s.agents.find(a => a.role === 'F2');
       if (f1 && f1.alive) {
         f1.pos = to;
-        if (to === s.bhNode) {
-          f1.alive = false;
-          f1.status = 'dead';
-          s.lostInBH++;
-          logAdd(s.round, 'danger', `Base Backup Agent [F1] executes step verification check on link (${from}->${to}) and gets destroyed.`);
-          logAdd(s.round, 'safe', `Stationary base controller [F2] captures exact failure tracking context data successfully.`);
+        if (isDangerous) {
+          f1.alive = false; f1.status = 'dead'; s.lostInBH++;
+          logAdd(s.round, 'danger', `Backup Cautious Mover [F1] verifies edge (${from}->${to}) and is lost.`);
+          logAdd(s.round, 'safe', `Homebase backup [F2] successfully infers the Byzantine Black Hole at ${to}!`);
           s.edgeStatus[edgeKey(from, to)] = 'dangerous';
           s.bhLocated = true;
           finishSim(true);
           return;
         } else {
-          logAdd(s.round, 'info', `Backup checker [F1] confirms verification step safe at node ${to}. Falling back.`);
+          logAdd(s.round, 'info', `Backup checker [F1] steps into ${to} safely. Falling back to verify context.`);
           f1.pos = from;
         }
       }
@@ -377,45 +369,36 @@ function stepPaperSimulation() {
       return;
     }
 
-    // Step-by-step trace implementation for the specific 5-round translation cycle
     if (round === 1) {
       if (lAgent) lAgent.pos = to;
-      logAdd(s.round, 'info', `[Round 1] Leader [L] advances to explore forward node ${to}.`);
-      if (isDangerous && lAgent) {
-        lAgent.alive = false;
-        s.lostInBH++;
-        s.paperInterventionTriggered = true;
-        logAdd(s.round, 'danger', `CRITICAL: Leader [L] entered the Byzantine Black Hole at node ${to} and was eliminated.`);
+      logAdd(s.round, 'info', `TRANSLATE R1: Leader [L] probes forward node.`);
+      if (isDangerous && lAgent && lAgent.alive) {
+        lAgent.alive = false; s.lostInBH++; s.paperInterventionTriggered = true;
+        logAdd(s.round, 'danger', `CRITICAL: Leader [L] destroyed by Byzantine Black Hole!`);
       }
     } else if (round === 2) {
-      if (i2Agent) i2Agent.pos = to;
-      if (lAgent && lAgent.alive) lAgent.pos = from;
-      logAdd(s.round, 'info', `[Round 2] Intermediate [I2] moves forward, Leader [L] checks back position.`);
-    } else if (round === 3) {
       if (i2Agent) i2Agent.pos = from;
+      if (lAgent && lAgent.alive) lAgent.pos = from;
+      logAdd(s.round, 'info', `TRANSLATE R2: Intermediate [I2] moves forward, L verifies back.`);
+    } else if (round === 3) {
+      if (i2Agent) i2Agent.pos = (fAgent ? fAgent.pos : from);
       if (lAgent && lAgent.alive) lAgent.pos = to;
-      logAdd(s.round, 'info', `[Round 3] I2 returns to synchronize context tracking coordinates.`);
+      logAdd(s.round, 'info', `TRANSLATE R3: I2 cycles back to F, L returns to frontier.`);
       if (isDangerous && lAgent && lAgent.alive) {
-        lAgent.alive = false;
-        s.lostInBH++;
-        s.paperInterventionTriggered = true;
-        logAdd(s.round, 'danger', `CRITICAL: Leader [L] caught in malicious dynamic black hole state at node ${to}.`);
+        lAgent.alive = false; s.lostInBH++; s.paperInterventionTriggered = true;
+        logAdd(s.round, 'danger', `CRITICAL: Leader [L] destroyed by Byzantine Black Hole!`);
       }
     } else if (round === 4) {
       if (fAgent) fAgent.pos = from;
       if (i2Agent) i2Agent.pos = from;
-      logAdd(s.round, 'info', `[Round 4] Follower [F] and [I2] align structure on verified link gateway.`);
+      logAdd(s.round, 'info', `TRANSLATE R4: Follower [F] and I2 align structure on verified link.`);
     } else if (round === 5) {
       if (i1Agent) i1Agent.pos = to;
-      logAdd(s.round, 'info', `[Round 5] Intermediate [I1] advances forward to consolidate the translated link.`);
-      if (isDangerous && i1Agent) {
-        i1Agent.alive = false;
-        s.lostInBH++;
-        s.paperInterventionTriggered = true;
-        logAdd(s.round, 'danger', `CRITICAL: Pattern sync failure. Agent [I1] lost to unexpected malicious host activation.`);
+      logAdd(s.round, 'info', `TRANSLATE R5: Intermediate [I1] advances to consolidate translation.`);
+      if (isDangerous && i1Agent && i1Agent.alive) {
+        i1Agent.alive = false; s.lostInBH++; s.paperInterventionTriggered = true;
+        logAdd(s.round, 'danger', `CRITICAL: Intermediate [I1] destroyed by Byzantine Black Hole!`);
       }
-      
-      // If the path step was completely safe, officially tag it in our UI table
       if (!isDangerous) {
         s.edgeStatus[edgeKey(from, to)] = 'safe';
         s.safeNodes.add(from);
@@ -425,10 +408,9 @@ function stepPaperSimulation() {
         getCyEdge(from, to).addClass('safe');
       }
     }
-
     s.traversalIndex++;
-    refreshDisplay();
   }
+  refreshDisplay();
 }
 
 function prepareOperation(s, step) {
@@ -445,9 +427,6 @@ function prepareOperation(s, step) {
         .filter(a => a.alive && !a.byzantine && a.pos === step.from)
         .slice(0, s.f + 1);
       probes.forEach(agent => actions.push({ type: 'lose', agentId: agent.id }));
-      if (probes.length < s.f + 1) {
-        logAdd(s.round, 'warn', `Only ${probes.length} good agent(s) available for the required f+1=${s.f + 1} CCP loss threshold.`);
-      }
     } else {
       actions.push({ type: 'markDanger' });
     }
@@ -455,7 +434,6 @@ function prepareOperation(s, step) {
     const movers = s.agents.filter(a => a.alive && a.pos === step.from);
     movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
     if (movers.length === 0) {
-      logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical DFS cursor to ${step.to}.`);
       actions.push({ type: 'markMoveOnly' });
     }
   }
@@ -473,7 +451,6 @@ function moveAgent(agentId, from, to) {
   logAdd(s.round, agent.byzantine ? 'byz' : 'info', `A${agent.id} moves ${from}->${to} (${agent.byzantine ? 'Byzantine' : 'good'}).`);
 }
 
-// ... Rest of the helper functions from original codebase remain unaltered ...
 function loseAgentToBlackHole(agentId, from, to) {
   const s = simState;
   const agent = s.agents.find(a => a.id === agentId);
@@ -590,11 +567,16 @@ function finishSim(success) {
 
   const survivors = s.agents.filter(a => a.alive && !a.byzantine).length;
   if (success) {
-    logAdd(s.round, 'system', `PROTCOL TERMINATED SUCCESSFULLY: Malicious node located cleanly.`);
-    showOverlay('success', 'ANALYSIS COMPLETE', `Target network component successfully evaluated in ${s.round} steps.`);
+    if (s.simMode === 'bbh_home') {
+      logAdd(s.round, 'safe', `BBH-HOME COMPLETE: The safe component has been successfully protected and identified.`);
+      showOverlay('success', 'PATTERN TRANSLATION COMPLETE', `The Byzantine Black Hole logic successfully halted exploration.`);
+    } else {
+      logAdd(s.round, 'system', `BH LOCATED at node ${s.bhNode}`);
+      showOverlay('success', 'BLACK HOLE LOCATED', `Node ${s.bhNode} identified in ${s.round} rounds - ${survivors} survivors`);
+    }
   } else {
-    logAdd(s.round, 'danger', 'SIMULATION RECOVERY FAIL: Fault parameters exceeded team scale capacity limits.');
-    showOverlay('failure', 'MISSION HALTED', 'Available explorer resources completely depleted.');
+    logAdd(s.round, 'danger', 'BHS FAILED');
+    showOverlay('failure', 'MISSION FAILED', 'All resources depleted.');
   }
   $('runBtn').disabled  = true;
   $('stepBtn').disabled = true;

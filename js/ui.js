@@ -31,7 +31,7 @@ export function updateAgentChips() {
     if (a.alive && simState.activeAgentId === a.id) classes.push('active');
     chip.className = classes.join(' ');
     
-    // Append paper specific role labels cleanly if active
+    // Add paper specific roles to the chip if BBH_HOME mode is active
     let roleLabel = '';
     if (simState.simMode === 'bbh_home' && a.alive) {
       if (a.role) roleLabel = ` [${a.role}]`;
@@ -78,30 +78,29 @@ export function updateFormula() {
   const know = $('topoKnow').value;
   const comm = $('commModel').value;
   const topo = $('topoSelect').value;
-  const simMode = $('simModeSelect').value;
+  const simMode = $('simModeSelect')?.value; // Graceful catch
 
   let k, time, alg;
 
   if (simMode === 'bbh_home') {
-    // Inject mathematical conditions and time bounds verbatim from the paper text
-    if (topo === 'tree' || topo === 'ring' || topo === 'star') {
-      k = 6; // Tight analytical bound for trees and simpler acyclic topologies
-      time = 'O(2^i \\log \\Delta)';
+    if (topo === 'tree' || topo === 'ring' || topo === 'star' || topo === 'path') {
+      k = 6; 
+      time = '$O(2^i \\log \\Delta)$';
       alg = 'TREE_PERPEXPLORE-BBH-HOME';
     } else {
-      k = '3\\Delta + 3'; // Maximum resource constraint derived for general network structures
-      time = 'O(n^3 \\Delta^2)';
+      k = '$3\\Delta + 3$'; 
+      time = '$O(n^3 \\Delta^2)$';
       alg = 'GRAPH_PERPEXPLORE-BBH-HOME';
     }
     
     $('formulaBox').innerHTML = `
       <span class="hi">k ≥ ${k}</span> agents needed [Paper]<br>
-      Time Complexity: <span class="hi-g">$${time}$</span><br>
+      Time Complexity: <span class="hi-g">${time}</span><br>
       Protocol: <span class="hi">${alg}</span><br>
       <span class="hi-r">f = ${f}</span> Byzantine black hole setting
     `;
   } else {
-    // Fall back to original bounds computation paths
+    // Original bounds logic
     if (know === 'known') {
       k = 2 * f + 2;
       time = 'O(n + f)';

@@ -1,7 +1,7 @@
 // Entry point: wires up DOM events and starts the simulator.
 
 import { cyRef, runRef } from './state.js';
-import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph, triggerAdversary } from './simulation.js';
+import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph } from './simulation.js';
 import { $, updateFormula, closeOverlay, switchTab } from './ui.js';
 
 const nNodes  = $('nNodes');
@@ -23,7 +23,6 @@ function refreshGraphViewport() {
 function setPanelsCollapsed(collapsed, persist = true) {
   const mobile = mobilePanelQuery.matches;
   document.body.classList.toggle('panels-collapsed', collapsed);
-  if (!panelToggle) return;
   panelToggle.setAttribute('aria-expanded', String(!collapsed));
   panelToggle.setAttribute('aria-label', collapsed ? 'Show controls and status panels' : 'Hide controls and status panels');
   panelToggle.title = collapsed ? 'Show panels' : 'Hide panels';
@@ -60,48 +59,36 @@ if (panelToggle) {
 }
 window.addEventListener('resize', refreshGraphViewport);
 
-if (nNodes) nNodes.oninput = () => { if ($('nVal')) $('nVal').textContent = nNodes.value; updateFormula(); };
-if (fFault) fFault.oninput = () => { if ($('fVal')) $('fVal').textContent = fFault.value; updateFormula(); };
-if ($('topoKnow')) $('topoKnow').onchange = updateFormula;
-if ($('commModel')) $('commModel').onchange = updateFormula;
-if ($('topoSelect')) $('topoSelect').onchange = () => { updateFormula(); buildGraph(); };
+// Update logic dynamically based on user selections
+nNodes.oninput = () => { $('nVal').textContent = nNodes.value; updateFormula(); };
+fFault.oninput = () => { $('fVal').textContent = fFault.value; updateFormula(); };
+$('topoKnow').onchange = updateFormula;
+$('commModel').onchange = updateFormula;
+$('topoSelect').onchange = () => { updateFormula(); buildGraph(); };
 
-// Safely hook up the new Simulator Mode
-const simModeSel = $('simMode');
-if (simModeSel) {
-    simModeSel.onchange = () => { updateFormula(); buildGraph(); };
-}
+// NEW: Wire up the Simulation Mode toggle seamlessly
+$('simModeSelect').addEventListener('change', () => {
+  updateFormula();
+  buildGraph();
+});
 
-if ($('buildBtn')) $('buildBtn').onclick = buildGraph;
-if ($('resetBtn')) $('resetBtn').onclick = resetSimulation;
-if ($('stepBtn')) $('stepBtn').onclick  = stepSimulation;
+$('buildBtn').onclick = buildGraph;
+$('resetBtn').onclick = resetSimulation;
+$('stepBtn').onclick  = stepSimulation;
 
-// Safely hook up the Manual Adversary Trap
-const advBtn = $('adversaryBtn');
-if (advBtn) {
-  advBtn.onclick = () => {
-    triggerAdversary();
-    advBtn.textContent = "💥 BBH ARMED!";
-    setTimeout(() => advBtn.textContent = "😈 ARM BYZANTINE BBH", 1500);
-  };
-}
+runBtn.onclick = () => {
+  if (runRef.intervalId) {
+    clearInterval(runRef.intervalId);
+    runRef.intervalId = null;
+    runBtn.textContent = '▶ RUN SIMULATION';
+  } else {
+    const speed = +$('speedSel').value;
+    runRef.intervalId = setInterval(stepSimulation, speed);
+    runBtn.textContent = '⏸ PAUSE';
+  }
+};
 
-if (runBtn) {
-  runBtn.onclick = () => {
-    if (runRef.intervalId) {
-      clearInterval(runRef.intervalId);
-      runRef.intervalId = null;
-      runBtn.textContent = '▶ RUN SIMULATION';
-    } else {
-      const speedElement = $('speedSel');
-      const speed = speedElement ? +speedElement.value : 400;
-      runRef.intervalId = setInterval(stepSimulation, speed);
-      runBtn.textContent = '⏸ PAUSE';
-    }
-  };
-}
-
-if ($('overlayCloseBtn')) $('overlayCloseBtn').addEventListener('click', closeOverlay);
+$('overlayCloseBtn').addEventListener('click', closeOverlay);
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });
