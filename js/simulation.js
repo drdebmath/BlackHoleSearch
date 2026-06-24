@@ -151,6 +151,55 @@ function graphStaysConnectedWithout(blockedNode, homebase, neighbors, n) {
   return visited.size === n - 1;
 }
 
+function findAgentPathToTarget(s, target) {
+  const queue = [];
+  const parent = new Map();
+  const sourceAgent = new Map();
+  const blockedNode = s.bhLocated ? s.bhNode : null;
+
+  for (const agent of s.agents) {
+    if (!agent.alive) continue;
+    if (agent.pos === target) return { agentId: agent.id, path: [target] };
+    if (!parent.has(agent.pos)) {
+      parent.set(agent.pos, null);
+      sourceAgent.set(agent.pos, agent.id);
+      queue.push(agent.pos);
+    }
+  }
+
+  while (queue.length) {
+    const cur = queue.shift();
+    for (const next of s.neighbors[cur] || []) {
+      if (parent.has(next)) continue;
+      if (blockedNode !== null && next === blockedNode) continue;
+      const key = edgeKey(cur, next);
+      if (s.edgeStatus[key] === 'dangerous') continue;
+      parent.set(next, cur);
+      sourceAgent.set(next, sourceAgent.get(cur));
+      if (next === target) {
+        const path = [];
+        let node = next;
+        while (node !== null) {
+          path.unshift(node);
+          node = parent.get(node);
+        }
+        return { agentId: sourceAgent.get(next), path };
+      }
+      queue.push(next);
+    }
+  }
+
+  return null;
+}
+
+function buildMoveActionsForPath(agentId, path) {
+  const actions = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    actions.push({ type: 'move', agentId, from: path[i], to: path[i + 1] });
+  }
+  return actions;
+}
+
 function requiredAgents(know, comm, f, delta) {
   if (know === 'known') return 2 * f + 2;
   if (comm === 'whiteboard') return (f + 1) * (delta + 1);
@@ -234,12 +283,12 @@ export function stepSimulation() {
   s.round++;
   s.activeAgentId = action.agentId ?? null;
   setStat('sRound', s.round);
-  highlightEdge(op.step.from, op.step.to);
+  highlightEdge(action.from ?? op.step.from, action.to ?? op.step.to);
 
   if (action.type === 'move') {
-    moveAgent(action.agentId, op.step.from, op.step.to);
+    moveAgent(action.agentId, action.from ?? op.step.from, action.to ?? op.step.to);
   } else if (action.type === 'lose') {
-    loseAgentToBlackHole(action.agentId, op.step.from, op.step.to);
+    loseAgentToBlackHole(action.agentId, action.from ?? op.step.from, action.to ?? op.step.to);
   } else if (action.type === 'markDanger') {
     logAdd(s.round, 'danger', `Edge (${op.step.from}->${op.step.to}) borders the known black hole; marked DANGEROUS without another loss.`);
   } else if (action.type === 'markMoveOnly') {
@@ -279,22 +328,40 @@ function prepareOperation(s, step) {
   const dangerous = step.to === s.bhNode && s.bhActive;
   const actions = [];
 
-  if (dangerous) {
-    if (!s.bhLocated) {
-      const probes = s.agents
-        .filter(a => a.alive && !a.byzantine && a.pos === step.from)
-        .slice(0, s.f + 1);
-      probes.forEach(agent => actions.push({ type: 'lose', agentId: agent.id }));
-      if (probes.length < s.f + 1) {
-        logAdd(s.round, 'warn', `Only ${probes.length} good agent(s) available for the required f+1=${s.f + 1} CCP loss threshold.`);
+  const attachStepEdges = (action) => {
+    action.from = action.from ?? step.from;
+    action.to = action.to ?? step.to;
+    return action;
+  };
+
+  const createStepActions = (agentId) => {
+    if (dangerous) {
+      if (!s.bhLocated) {
+        const agent = s.agents.find(a => a.id === agentId);
+        if (agent && !agent.byzantine) {
+          actions.push(attachStepEdges({ type: 'lose', agentId }));
+        } else {
+          logAdd(s.round, 'warn', `No good agent available at node ${step.from} to perform BH probe after relocation.`);
+        }
+      } else {
+        actions.push(attachStepEdges({ type: 'markDanger' }));
       }
     } else {
-      actions.push({ type: 'markDanger' });
+      actions.push(attachStepEdges({ type: 'move', agentId }));
     }
+  };
+
+  const movers = s.agents.filter(a => a.alive && a.pos === step.from);
+  if (movers.length > 0) {
+    movers.forEach(agent => actions.push(attachStepEdges({ type: 'move', agentId: agent.id })));
   } else {
-    const movers = s.agents.filter(a => a.alive && a.pos === step.from);
-    movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
-    if (movers.length === 0) {
+    const relocation = findAgentPathToTarget(s, step.from);
+    if (relocation && relocation.path.length > 1) {
+      actions.push(...buildMoveActionsForPath(relocation.agentId, relocation.path));
+      createStepActions(relocation.agentId);
+    } else if (relocation) {
+      createStepActions(relocation.agentId);
+    } else {
       logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical DFS cursor to ${step.to}.`);
       actions.push({ type: 'markMoveOnly' });
     }
