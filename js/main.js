@@ -64,10 +64,35 @@ $('commModel').onchange = updateFormula;
 $('topoSelect').onchange = () => { updateFormula(); buildGraph(); };
 
 // Adversary controls wiring
-const advToggle = $('advMode');
+const adversaryType = $('adversaryType');
 const bhProb = $('bhProb');
-if (advToggle) advToggle.addEventListener('change', () => buildGraph());
-if (bhProb) bhProb.addEventListener('input', () => { $('bhProbVal').textContent = bhProb.value + '%'; });
+const bhProbLabel = $('bhProbLabel');
+
+function updateAdversaryControls() {
+  const selected = adversaryType.querySelector('input:checked').value;
+  if (selected === 'probabilistic') {
+    bhProbLabel.style.display = '';
+  } else {
+    bhProbLabel.style.display = 'none';
+  }
+}
+
+if (adversaryType) {
+  adversaryType.addEventListener('change', () => {
+    updateAdversaryControls();
+    buildGraph();
+  });
+}
+if (bhProb) {
+  bhProb.addEventListener('input', () => {
+    $('bhProbVal').textContent = bhProb.value + '%';
+  });
+}
+
+// Set initial state on load
+if (adversaryType) {
+  updateAdversaryControls();
+}
 
 // SAFE WIRE-UP: Will not crash if the HTML hasn't been updated yet
 const simModeToggle = $('simModeSelect');

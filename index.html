@@ -84,18 +84,27 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         </select>
       </label>
 
-      <label>
-        ADVERSARY MODE
-        <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
-          <input type="checkbox" id="advMode">
-          <span style="font-size:12px;color:var(--muted)">Enable Byzantine Black Hole</span>
-        </div>
+      <label>ADVERSARY TYPE</label>
+      <fieldset class="adv-fieldset" id="adversaryType">
+        <label class="adv-radio">
+          <input type="radio" name="adversary" value="none" checked>
+          <span>None</span>
+        </label>
+        <label class="adv-radio">
+          <input type="radio" name="adversary" value="probabilistic">
+          <span>Probabilistic</span>
+        </label>
+        <label class="adv-radio">
+          <input type="radio" name="adversary" value="intelligent">
+          <span>Intelligent</span>
+        </label>
+      </fieldset>
+
+      <label id="bhProbLabel" style="display: none;">
+        BH KILL PROBABILITY — <span class="val-display" id="bhProbVal">20%</span>
+        <input type="range" id="bhProb" min="0" max="100" value="20">
       </label>
 
-      <label>
-        BH KILL PROBABILITY — <span class="val-display" id="bhProbVal">100%</span>
-        <input type="range" id="bhProb" min="0" max="100" value="100">
-      </label>
 
       <div class="formula-box" id="formulaBox">
         — configure above —
