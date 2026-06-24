@@ -1,3 +1,5 @@
+// DOM helpers: stats, event log, agent chips, edge table, overlay, tabs.
+
 import { simState } from './state.js';
 
 export const $ = id => document.getElementById(id);
@@ -28,14 +30,7 @@ export function updateAgentChips() {
     else classes.push('good');
     if (a.alive && simState.activeAgentId === a.id) classes.push('active');
     chip.className = classes.join(' ');
-    
-    // Add paper specific roles to the chip if BBH_HOME mode is active
-    let roleLabel = '';
-    if (simState.simMode === 'bbh_home' && a.alive) {
-      if (a.role) roleLabel = ` [${a.role}]`;
-    }
-    
-    chip.textContent = `A${a.id}${roleLabel}${a.byzantine ? ' ☿' : ''}${!a.alive ? ' ✕' : ` @${a.pos}`}`;
+    chip.textContent = `A${a.id}${a.byzantine ? ' ☿' : ''}${!a.alive ? ' ✕' : ` @${a.pos}`}`;
     list.appendChild(chip);
   });
 }
@@ -75,49 +70,26 @@ export function updateFormula() {
   const f = +$('fFault').value;
   const know = $('topoKnow').value;
   const comm = $('commModel').value;
-  const topo = $('topoSelect').value;
-  const simModeToggle = $('simModeSelect');
-  const simMode = simModeToggle ? simModeToggle.value : 'bhs'; // Graceful catch
 
   let k, time, alg;
-
-  if (simMode === 'bbh_home') {
-    if (topo === 'tree' || topo === 'ring' || topo === 'star' || topo === 'path') {
-      k = 6; 
-      time = 'O(2^i log Δ)';
-      alg = 'TREE_PERPEXPLORE-BBH-HOME';
-    } else {
-      k = '3Δ + 3'; 
-      time = 'O(n^3 Δ^2)';
-      alg = 'GRAPH_PERPEXPLORE-BBH-HOME';
-    }
-    
-    $('formulaBox').innerHTML = `
-      <span class="hi">k ≥ ${k}</span> agents needed [Paper]<br>
-      Time Complexity: <span class="hi-g">${time}</span><br>
-      Protocol: <span class="hi">${alg}</span><br>
-      <span class="hi-r">f = ${f}</span> Byzantine black hole setting
-    `;
+  if (know === 'known') {
+    k = 2 * f + 2;
+    time = 'O(n + f)';
+    alg = 'DFS+CCP';
+  } else if (comm === 'whiteboard') {
+    k = '(f+1)(∆+1)';
+    time = 'O(m + f)';
+    alg = 'DFS+CCP+WB';
   } else {
-    if (know === 'known') {
-      k = 2 * f + 2;
-      time = 'O(n + f)';
-      alg = 'DFS+CCP';
-    } else if (comm === 'whiteboard') {
-      k = '(f+1)(∆+1)';
-      time = 'O(m + f)';
-      alg = 'DFS+CCP+WB';
-    } else {
-      k = '(f+1)(∆+1)+3f+1';
-      time = 'O(m·n + f)';
-      alg = 'DFS+CCP+MAP';
-    }
-
-    $('formulaBox').innerHTML = `
-      <span class="hi">k ≥ ${typeof k === 'number' ? `<b>${k}</b>` : k}</span> agents needed<br>
-      Time: <span class="hi-g">${time}</span><br>
-      Algorithm: <span class="hi">${alg}</span><br>
-      <span class="hi-r">f = ${f}</span> Byzantine fault(s)
-    `;
+    k = '(f+1)(∆+1)+3f+1';
+    time = 'O(m·n + f)';
+    alg = 'DFS+CCP+MAP';
   }
+
+  $('formulaBox').innerHTML = `
+    <span class="hi">k ≥ ${typeof k === 'number' ? `<b>${k}</b>` : k}</span> agents needed<br>
+    Time: <span class="hi-g">${time}</span><br>
+    Algorithm: <span class="hi">${alg}</span><br>
+    <span class="hi-r">f = ${f}</span> Byzantine fault(s)
+  `;
 }

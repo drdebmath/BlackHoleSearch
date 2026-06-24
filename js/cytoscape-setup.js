@@ -48,19 +48,6 @@ const STYLE = [
       'text-outline-width': 2,
     },
   },
-  // NEW: Dormant state for the Intelligent/Probabilistic Adversary
-  {
-    selector: 'node.dormant',
-    style: {
-      'background-color': '#1a1d24',
-      'border-color': '#00e676',
-      'border-width': 2,
-      'border-style': 'dashed',
-      'color': '#00e676',
-      'label': 'DORMANT',
-      'font-size': 9
-    }
-  },
   {
     selector: 'node.revealed',
     style: {
@@ -100,7 +87,6 @@ const STYLE = [
     },
   },
   { selector: 'edge.safe',      style: { 'line-color': '#00e676', 'width': 3, 'opacity': 0.7 } },
-  { selector: 'edge.expired',   style: { 'line-color': '#ffb700', 'width': 3, 'line-style': 'dotted', 'opacity': 0.85 } },
   { selector: 'edge.dangerous', style: { 'line-color': '#ff3d5a', 'width': 3, 'line-style': 'dashed' } },
   { selector: 'edge.probing',   style: { 'line-color': '#ffb700', 'width': 3, 'line-style': 'dashed' } },
 ];
@@ -129,12 +115,9 @@ function showTooltip(evt) {
   const tip = document.getElementById('tooltip');
   const pos = evt.renderedPosition;
   const agentsHere = simState.agents.filter(a => `n${a.pos}` === nid);
-  
-  let here = 'Unexplored';
-  if (node.hasClass('blackhole') || node.hasClass('revealed')) here = '☠ BLACK HOLE (ACTIVE)';
-  else if (node.hasClass('dormant')) here = 'DORMANT (TRAP)';
-  else if (node.hasClass('safe')) here = '✓ SAFE';
-  
+  const here = node.hasClass('blackhole') || node.hasClass('revealed')
+    ? '☠ BLACK HOLE'
+    : node.hasClass('safe') ? '✓ SAFE' : 'Unexplored';
   const agentList = agentsHere.length > 0
     ? agentsHere.map(a => `A${a.id}${a.byzantine ? ' [BYZ]' : ''}`).join(', ')
     : 'none';

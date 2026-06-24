@@ -37,10 +37,6 @@ black hole is unambiguously identified at the end of the exploration.
   agents `f`, communication model, topology knowledge.
 - **Live agent placement** drawn over a Cytoscape graph, with edge probing,
   safe/dangerous edge classification, and round-by-round event logging.
-- **Ephemeral edge memory:** a safe edge certificate expires after a configurable
-  number of rounds, forcing agents to re-probe it before relying on it again.
-- **Continuous maintenance loop:** after the initial DFS plan, agents keep
-  routing toward expired or unknown edges and refreshing their safety status.
 - **Theoretical bounds** displayed as you tune the parameters — the team size
   `k`, time complexity, and algorithm name update in real time.
 
@@ -78,25 +74,20 @@ more than `f+1` honest agents.
 
 ## How it works (under the hood)
 
-The simulator probes one edge at a time using a simplified CCP model:
+The simulator probes one edge per round using a simplified CCP model:
 
 1. A physical **DFS** walk is precomputed from the homebase, including
    backtracking moves.
-2. A candidate edge is not considered safe until agents complete the visible
-   CCP pattern: probe out, return, repeat up to the `f + 1` threshold, then
-   certify and cross.
-3. Each certified edge receives a round-based expiry timer. When that timer
-   decays, the edge is marked `EXPIRED` and must be re-probed before blind use.
-4. If `v` is the black hole, up to `f + 1` good agents are consumed (this is
+2. Each round advances one agent by one step along the current DFS/CCP action.
+3. If `v` is the black hole, up to `f + 1` good agents are consumed (this is
    the worst case for cautious probing under `f` Byzantine faults) and the
    edge is flagged as *dangerous*.
-5. Otherwise the edge is *safe*, `v` is added to the explored set, and there
+4. Otherwise the edge is *safe*, `v` is added to the explored set, and there
    is a chance that any active Byzantine agent gets *identified* by its
    inconsistent behaviour during the cross-check.
-6. Once the initial DFS plan is exhausted, the simulator enters a continuous
-   maintenance loop that re-routes to expired or unknown edges and probes them
-   again. The run finishes when the BH is located. The mission fails if every
-   honest agent is consumed before that happens.
+5. The run finishes when the BH is located (known-map) or when every edge has
+   been classified (unknown-map). The mission fails if every honest agent is
+   consumed before that happens.
 
 > ⚠️ This is a **teaching / visualisation prototype**, not a verified
 > implementation of any published protocol. The CCP step is abstracted into a

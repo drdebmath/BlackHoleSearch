@@ -38,15 +38,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     <div class="controls">
 
       <label>
-        
-        SIMULATION MODE
-        <select id="simModeSelect">
-          <option value="bhs" selected>Black Hole Search (Original DFS+CCP)</option>
-          <option value="bbh_home">Perpetual Exploration (Paper BBH-HOME)</option>
-        </select>
-      </label>
-
-      <label>
         GRAPH TOPOLOGY
         <select id="topoSelect">
           <option value="random">Random Connected Graph</option>
@@ -83,28 +74,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
           <option value="unknown">Unknown Map (Explore)</option>
         </select>
       </label>
-
-      <label>ADVERSARY TYPE</label>
-      <fieldset class="adv-fieldset" id="adversaryType">
-        <label class="adv-radio">
-          <input type="radio" name="adversary" value="none" checked>
-          <span>None</span>
-        </label>
-        <label class="adv-radio">
-          <input type="radio" name="adversary" value="probabilistic">
-          <span>Probabilistic</span>
-        </label>
-        <label class="adv-radio">
-          <input type="radio" name="adversary" value="intelligent">
-          <span>Intelligent</span>
-        </label>
-      </fieldset>
-
-      <label id="bhProbLabel" style="display: none;">
-        BH KILL PROBABILITY — <span class="val-display" id="bhProbVal">20%</span>
-        <input type="range" id="bhProb" min="0" max="100" value="20">
-      </label>
-
 
       <div class="formula-box" id="formulaBox">
         — configure above —
@@ -223,6 +192,6 @@ themeToggle.onclick = () => {
 };
 syncThemeToggle();
 </script>
-<footer class="footer-credit">Developed by Vansh Gupta v1.0 </footer>
+<footer class="footer-credit">Developed by Vansh Gupta</footer>
 </body>
 </html>
