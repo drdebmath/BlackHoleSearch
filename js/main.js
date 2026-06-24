@@ -6,6 +6,8 @@ import { $, updateFormula, closeOverlay, switchTab } from './ui.js';
 
 const nNodes  = $('nNodes');
 const fFault  = $('fFault');
+const advType  = $('adversaryType');
+const bhProbEl = $('bhProb');
 const runBtn  = $('runBtn');
 const panelToggle = $('panelToggle');
 const panelStoreKey = 'bhs-panels-collapsed';
@@ -63,6 +65,12 @@ nNodes.oninput = () => { $('nVal').textContent = nNodes.value; updateFormula(); 
 fFault.oninput = () => { $('fVal').textContent = fFault.value; updateFormula(); };
 $('topoKnow').onchange = updateFormula;
 $('commModel').onchange = updateFormula;
+if (advType) advType.onchange = () => {};
+if (bhProbEl) {
+  bhProbEl.oninput = () => { $('bhProbVal').textContent = bhProbEl.value + '%'; };
+  // initialize display
+  $('bhProbVal').textContent = bhProbEl.value + '%';
+}
 
 $('buildBtn').onclick = buildGraph;
 $('resetBtn').onclick = resetSimulation;

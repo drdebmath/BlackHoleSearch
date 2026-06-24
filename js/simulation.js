@@ -7,6 +7,7 @@
 import { cyRef, runRef, simState, setSimState } from './state.js';
 import { generateGraph } from './graph-generation.js';
 import { initCy } from './cytoscape-setup.js';
+import { runAdversary } from './adversary.js';
 import {
   $, setStat, logAdd, logClear, updateAgentChips,
   updateEdgeTable, showOverlay, updateFormula,
@@ -22,6 +23,9 @@ export function buildGraph() {
   const f    = +$('fFault').value;
   const comm = $('commModel').value;
   const know = $('topoKnow').value;
+  // Adversary settings (optional controls in UI)
+  const adversaryType = $('adversaryType') ? $('adversaryType').value : null;
+  const bhProb = $('bhProb') ? +$('bhProb').value : null;
 
   const { nodes, edges } = generateGraph(topo, n);
   initCy(nodes, edges);
@@ -61,13 +65,18 @@ export function buildGraph() {
   const state = {
     n, f, k, homebase, bhNode, agents, neighbors, ports, edges,
     edgeStatus, know, comm, delta,
+    adversaryType,
+    bhProb,
     round: 0,
     done: false,
     found: false,
     bhLocated: false,
     currentNode: homebase,
     visitedNodes: new Set([homebase]),
-    safeNodes: new Set([homebase]),
+    // Ephemeral knowledge about nodes: { [nodeId]: { status: 'safe'|'dangerous', round: <number> } }
+    nodeStatus: { [homebase]: { status: 'safe', round: 0 } },
+    // Whether BBH is active this round (controlled by adversary)
+    bhActive: false,
     traversalOrder: [],
     traversalIndex: 0,
     currentOperation: null,
@@ -204,6 +213,9 @@ export function stepSimulation() {
   if (!simState || simState.done) return;
 
   const s = simState;
+  // Adversary decides whether BBH is active this round
+  s.bhActive = runAdversary(simState, s.adversaryType) === 'active';
+  logAdd(s.round, 'system', `BBH is ${s.bhActive ? 'ACTIVE' : 'DORMANT'} this round.`);
   if (!s.currentOperation) {
     if (shouldFinish(s)) {
       finishSim(finishWasSuccessful(s));
@@ -240,7 +252,9 @@ export function stepSimulation() {
   if (op.index >= op.actions.length) {
     completeOperation(op);
     s.currentOperation = null;
-    s.traversalIndex++;
+    if (s.traversalOrder.length > 0) {
+      s.traversalIndex = (s.traversalIndex + 1) % s.traversalOrder.length;
+    }
   }
 
   refreshDisplay();
@@ -261,7 +275,8 @@ function prepareOperation(s, step) {
     return { step: { from: s.currentNode, to: s.currentNode }, actions: [{ type: 'noop' }], index: 0 };
   }
 
-  const dangerous = step.to === s.bhNode;
+  // A step is dangerous only if it targets the BH node AND the BBH is active this round
+  const dangerous = step.to === s.bhNode && s.bhActive;
   const actions = [];
 
   if (dangerous) {
@@ -309,6 +324,13 @@ function loseAgentToBlackHole(agentId, from, to) {
   s.currentNode = from;
   markCurrentNode(from);
   logAdd(s.round, 'danger', `A${agent.id} enters ${from}->${to} and is lost in the black hole (${s.lostInBH}/${s.f + 1}).`);
+
+  // Ephemeral memory: if this node was previously considered safe, mark it dangerous now
+  if (s.nodeStatus && s.nodeStatus[to] && s.nodeStatus[to].status === 'safe') {
+    s.nodeStatus[to] = { status: 'dangerous', round: s.round };
+    cyRef.instance.getElementById(`n${to}`).removeClass('safe').addClass('trap');
+    logAdd(s.round, 'danger', `NODE ${to} WAS A TRAP: previously marked safe but an agent was lost here.`);
+  }
 }
 
 function completeOperation(op) {
@@ -334,8 +356,10 @@ function completeOperation(op) {
   s.currentNode = to;
   if (classify && s.edgeStatus[key] === 'unknown') {
     s.edgeStatus[key] = 'safe';
-    s.safeNodes.add(from);
-    s.safeNodes.add(to);
+    // Record ephemeral safety with the current round
+    if (!s.nodeStatus) s.nodeStatus = {};
+    s.nodeStatus[from] = { status: 'safe', round: s.round };
+    s.nodeStatus[to]   = { status: 'safe', round: s.round };
     s.visitedNodes.add(to);
     cyEdge.addClass('safe');
     cyRef.instance.getElementById(`n${to}`).addClass('safe');
@@ -357,9 +381,8 @@ function maybeIdentifyByzantine(from, to) {
 }
 
 function shouldFinish(s) {
-  if (s.currentOperation) return false;
-  if (s.know === 'unknown') return allEdgesClassified(s) || s.traversalIndex >= s.traversalOrder.length;
-  return s.traversalIndex >= s.traversalOrder.length || s.bhLocated;
+  // Perpetual exploration mode: never finish automatically. Traversal index wraps elsewhere.
+  return false;
 }
 
 function finishWasSuccessful(s) {

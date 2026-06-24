@@ -29,7 +29,9 @@ export function runAdversary(simState, adversaryType) {
 }
 
 function runProbabilisticAdversary(simState) {
-  const activationProbability = ($('bhProb') ? (+$('bhProb').value / 100) : 0.2);
+  const activationProbability = (simState && typeof simState.bhProb === 'number')
+    ? (simState.bhProb / 100)
+    : 0.2;
   return Math.random() < activationProbability ? 'active' : 'dormant';
 }
 

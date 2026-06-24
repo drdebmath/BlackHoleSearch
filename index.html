@@ -75,6 +75,20 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         </select>
       </label>
 
+      <label>
+        ADVERSARY
+        <select id="adversaryType">
+          <option value="none">None</option>
+          <option value="probabilistic" selected>Probabilistic</option>
+          <option value="intelligent">Intelligent</option>
+        </select>
+      </label>
+
+      <label>
+        BH PROB — <span class="val-display" id="bhProbVal">20%</span>
+        <input type="range" id="bhProb" min="0" max="100" value="20">
+      </label>
+
       <div class="formula-box" id="formulaBox">
         — configure above —
       </div>
