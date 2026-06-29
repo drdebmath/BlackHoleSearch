@@ -61,6 +61,7 @@ window.addEventListener('resize', refreshGraphViewport);
 
 nNodes.oninput = () => { $('nVal').textContent = nNodes.value; updateFormula(); };
 fFault.oninput = () => { $('fVal').textContent = fFault.value; updateFormula(); };
+$('byzDeception').oninput = () => { $('byzDeceptionVal').textContent = `${$('byzDeception').value}%`; };
 $('topoKnow').onchange = updateFormula;
 $('commModel').onchange = updateFormula;
 

@@ -22,6 +22,7 @@ export function buildGraph() {
   const f    = +$('fFault').value;
   const comm = $('commModel').value;
   const know = $('topoKnow').value;
+  const deceptionProb = (+$('byzDeception').value || 50) / 100;
 
   const { nodes, edges } = generateGraph(topo, n);
   initCy(nodes, edges);
@@ -81,6 +82,7 @@ export function buildGraph() {
     activeAgentId: null,
     identifiedByzantine: new Set(),
     lostInBH: 0,
+    deceptionProb,
   };
   state.traversalOrder = know === 'known'
     ? buildKnownDFSPlan(state)
@@ -105,6 +107,7 @@ export function buildGraph() {
   logAdd(0, 'system', `Graph built: ${n} nodes, ${edges.length} edges, Delta=${delta}`);
   logAdd(0, 'system', `Black Hole at node ${bhNode} (hidden from agents)`);
   logAdd(0, 'system', `Team: k=${k} agents, f=${f} Byzantine`);
+  logAdd(0, 'system', `Byzantine deception rate: ${(deceptionProb * 100).toFixed(0)}% per probe`);
   logAdd(0, 'system', `Algorithm: ${know === 'known' ? 'WhiteboardMap/ProbeMap' : 'WhiteboardWithoutMap/ProbeWithoutMap'}`);
   logAdd(0, 'info', `CCP thresholds: ${f + 1} distinct return(s) => SAFE, ${f + 1} distinct non-return(s) => DANGEROUS.`);
   logAdd(0, 'info', `Homebase: node ${homebase}. DFS traversal plan ready.`);
@@ -234,6 +237,8 @@ export function stepSimulation() {
 
   if (action.type === 'move') {
     moveAgent(action.agentId, action.from ?? op.step.from, action.to ?? op.step.to);
+  } else if (action.type === 'moveCluster') {
+    moveAgentCluster(action.agentIds, action.from ?? op.step.from, action.to ?? op.step.to);
   } else if (action.type === 'lose') {
     loseAgentToBlackHole(action.agentId, action.from ?? op.step.from, action.to ?? op.step.to);
   } else if (action.type === 'refuseReturn') {
@@ -357,25 +362,40 @@ function agentsAvailableForProbe(s, nodeId) {
 function buildProbeActionsForAgent(s, agent, from, to, probe) {
   probe.sent.add(agent.id);
   const isBlackHolePort = to === s.bhNode;
+  const deceptive = shouldByzantineDeceive(s, agent);
 
   if (isBlackHolePort) {
     if (agent.byzantine) {
-      return [
-        { type: 'move', agentId: agent.id, from, to },
-        { type: 'move', agentId: agent.id, from: to, to: from, probeResult: 'return' },
-      ];
+      if (deceptive) {
+        return [
+          { type: 'move', agentId: agent.id, from, to },
+          { type: 'move', agentId: agent.id, from: to, to: from, probeResult: 'return' },
+        ];
+      }
+      return [{ type: 'lose', agentId: agent.id, from, to, probeResult: 'missing' }];
     }
     return [{ type: 'lose', agentId: agent.id, from, to, probeResult: 'missing' }];
   }
 
   if (agent.byzantine) {
-    return [{ type: 'refuseReturn', agentId: agent.id, from, to, probeResult: 'missing' }];
+    if (deceptive) {
+      return [{ type: 'refuseReturn', agentId: agent.id, from, to, probeResult: 'missing' }];
+    }
+    return [
+      { type: 'move', agentId: agent.id, from, to },
+      { type: 'move', agentId: agent.id, from: to, to: from, probeResult: 'return' },
+    ];
   }
 
   return [
     { type: 'move', agentId: agent.id, from, to },
     { type: 'move', agentId: agent.id, from: to, to: from, probeResult: 'return' },
   ];
+}
+
+function shouldByzantineDeceive(s, agent) {
+  if (!agent || !agent.byzantine) return false;
+  return Math.random() < (s.deceptionProb ?? 0.5);
 }
 
 function recordProbeEvidence(op) {
@@ -401,18 +421,17 @@ function scheduleSafeAdvance(op) {
   const s = simState;
   const { from, to } = op.step;
   const movers = s.agents.filter(agent => agent.alive && agent.pos === from);
-  const actions = movers.map(agent => ({ type: 'move', agentId: agent.id, from, to }));
 
-  if (actions.length === 0) {
+  if (movers.length === 0) {
     s.currentNode = to;
     markCurrentNode(to);
     return 'complete';
   }
 
   op.probe.phase = 'advance-safe';
-  op.actions = actions;
+  op.actions = [{ type: 'moveCluster', agentIds: movers.map(agent => agent.id), from, to }];
   op.index = 0;
-  logAdd(s.round, 'safe', `Port (${from}->${to}) is SAFE; surviving group advances.`);
+  logAdd(s.round, 'safe', `Release phase: the verified cluster crosses (${from}->${to}) together.`);
   return 'continue';
 }
 
@@ -466,6 +485,20 @@ function moveAgent(agentId, from, to) {
   s.currentNode = to;
   markCurrentNode(to);
   logAdd(s.round, agent.byzantine ? 'byz' : 'info', `A${agent.id} moves ${from}->${to} (${agent.byzantine ? 'Byzantine' : 'good'}).`);
+}
+
+function moveAgentCluster(agentIds, from, to) {
+  const s = simState;
+  const agents = s.agents.filter(agent => agentIds.includes(agent.id) && agent.alive);
+  if (!agents.length) return;
+
+  agents.forEach(agent => {
+    agent.pos = to;
+  });
+  s.currentNode = to;
+  markCurrentNode(to);
+  const labels = agents.map(agent => `A${agent.id}`).join(', ');
+  logAdd(s.round, 'safe', `Cluster release: ${labels} move ${from}->${to} together.`);
 }
 
 function refuseReturn(agentId, from, to) {

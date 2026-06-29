@@ -498,6 +498,16 @@ body.panels-collapsed .right-panel {
   50%      { opacity: 0.4; }
 }
 
+@keyframes edge-pulse {
+  0%   { line-color: var(--warn); opacity: 0.8; }
+  100% { line-color: var(--accent); opacity: 1; }
+}
+
+@keyframes edge-release {
+  0%   { opacity: 0.85; }
+  100% { opacity: 1; }
+}
+
 /* ── TOOLTIP ── */
 #tooltip {
   position: absolute;

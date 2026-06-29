@@ -60,6 +60,11 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
       </label>
 
       <label>
+        BYZANTINE DECEPTION — <span class="val-display" id="byzDeceptionVal">50%</span>
+        <input type="range" id="byzDeception" min="0" max="100" step="5" value="50">
+      </label>
+
+      <label>
         COMMUNICATION MODEL
         <select id="commModel">
           <option value="whiteboard">Whiteboard</option>
@@ -201,6 +206,6 @@ themeToggle.onclick = () => {
 };
 syncThemeToggle();
 </script>
-<footer class="footer-credit">Developed by Vansh Gupta v4.3</footer>
+<footer class="footer-credit">Developed by Vansh Gupta v4.4</footer>
 </body>
 </html>
