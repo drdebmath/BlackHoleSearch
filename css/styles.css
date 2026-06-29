@@ -567,21 +567,6 @@ body.panels-collapsed .right-panel {
 
 /* ── PROGRESS BAR ── */
 .progress-bar-wrap { height: 2px; background: var(--border); margin: 0; }
-.ccp-readout {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 16px;
-  align-items: center;
-  padding: 6px 12px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.5px;
-  color: var(--dim);
-}
-.ccp-label b { color: var(--accent); }
-.ccp-tally b { font-size: 12px; }
 .progress-bar-fill {
   height: 2px;
   background: var(--accent);

@@ -60,14 +60,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
       </label>
 
       <label>
-        BYZANTINE STRATEGY
-        <select id="byzStrategy">
-          <option value="adversarial">Adversarial (probes, survives BH, lies on return)</option>
-          <option value="passive">Passive (never volunteers for a probe)</option>
-        </select>
-      </label>
-
-      <label>
         COMMUNICATION MODEL
         <select id="commModel">
           <option value="whiteboard">Whiteboard</option>
@@ -158,12 +150,6 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         <div class="stat-label">EDGES DANGER</div>
         <div class="stat-val sv-red" id="sEdgeDanger">0</div>
       </div>
-    </div>
-
-    <div class="ccp-readout" id="ccpReadout" style="display:none">
-      <span class="ccp-label">CCP on port <b id="ccpPort">—</b></span>
-      <span class="ccp-tally">RETURNED <b id="ccpR" class="sv-green">0</b>/<span id="ccpThresh">—</span></span>
-      <span class="ccp-tally">FAILED&nbsp;TO&nbsp;RETURN <b id="ccpD" class="sv-red">0</b>/<span id="ccpThresh2">—</span></span>
     </div>
 
     <div class="progress-bar-wrap"><div class="progress-bar-fill" id="progressBar"></div></div>

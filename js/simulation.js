@@ -10,7 +10,6 @@ import { initCy } from './cytoscape-setup.js';
 import {
   $, setStat, logAdd, logClear, updateAgentChips,
   updateEdgeTable, showOverlay, updateFormula,
-  updateCcpReadout, hideCcpReadout,
 } from './ui.js';
 
 export function buildGraph() {
@@ -23,7 +22,6 @@ export function buildGraph() {
   const f    = +$('fFault').value;
   const comm = $('commModel').value;
   const know = $('topoKnow').value;
-  const byzStrategy = $('byzStrategy').value; // 'adversarial' | 'passive'
 
   const { nodes, edges } = generateGraph(topo, n);
   initCy(nodes, edges);
@@ -62,7 +60,7 @@ export function buildGraph() {
 
   const state = {
     n, f, k, homebase, bhNode, agents, neighbors, ports, edges,
-    edgeStatus, know, comm, delta, byzStrategy,
+    edgeStatus, know, comm, delta,
     round: 0,
     done: false,
     found: false,
@@ -95,12 +93,11 @@ export function buildGraph() {
   setStat('sEdgeSafe', 0);
   setStat('sEdgeDanger', 0);
   $('progressBar').style.width = '0%';
-  hideCcpReadout();
 
   logClear();
   logAdd(0, 'system', `Graph built: ${n} nodes, ${edges.length} edges, Delta=${delta}`);
   logAdd(0, 'system', `Black Hole at node ${bhNode} (hidden from agents)`);
-  logAdd(0, 'system', `Team: k=${k} agents, f=${f} Byzantine (${byzStrategy === 'adversarial' ? 'adversarial: probes & lies' : 'passive: never probes'})`);
+  logAdd(0, 'system', `Team: k=${k} agents, f=${f} Byzantine`);
   logAdd(0, 'system', `Algorithm: ${know === 'known' ? 'WhiteboardMap/ProbeMap' : 'WhiteboardWithoutMap/ProbeWithoutMap'}`);
   logAdd(0, 'info', `Homebase: node ${homebase}. DFS traversal plan ready.`);
 
@@ -207,9 +204,6 @@ export function stepSimulation() {
   if (!simState || simState.done) return;
 
   const s = simState;
-
-  // Non-probe (plain move/backtrack) steps still run through the old
-  // one-action-per-round path; CCP probe steps run through runCcpRound.
   if (!s.currentOperation) {
     if (shouldFinish(s)) {
       finishSim(finishWasSuccessful(s));
@@ -219,14 +213,35 @@ export function stepSimulation() {
   }
 
   const op = s.currentOperation;
+  const action = op.actions[op.index++];
+  if (!action) {
+    logAdd(s.round, 'danger', 'Simulation halted: no valid action was available for the current DFS step.');
+    finishSim(false);
+    return;
+  }
+  s.round++;
+  s.activeAgentId = action.agentId ?? null;
+  setStat('sRound', s.round);
+  highlightEdge(op.step.from, op.step.to);
 
-  if (op.kind === 'ccp') {
-    runCcpRound(op);
-  } else {
-    runPlainRound(op);
+  if (action.type === 'move') {
+    moveAgent(action.agentId, op.step.from, op.step.to);
+  } else if (action.type === 'lose') {
+    loseAgentToBlackHole(action.agentId, op.step.from, op.step.to);
+  } else if (action.type === 'markDanger') {
+    logAdd(s.round, 'danger', `Edge (${op.step.from}->${op.step.to}) borders the known black hole; marked DANGEROUS without another loss.`);
+  } else if (action.type === 'markMoveOnly') {
+    s.currentNode = op.step.to;
+    markCurrentNode(op.step.to);
+  } else if (action.type === 'noop') {
+    logAdd(s.round, 'info', 'No DFS movement was required this round.');
   }
 
-  if (!s.currentOperation) s.traversalIndex++;
+  if (op.index >= op.actions.length) {
+    completeOperation(op);
+    s.currentOperation = null;
+    s.traversalIndex++;
+  }
 
   refreshDisplay();
 
@@ -241,56 +256,36 @@ export function stepSimulation() {
   }
 }
 
-// --- Plain (non-probing) DFS movement / backtrack steps -------------------
-
-function runPlainRound(op) {
-  const s = simState;
-  const action = op.actions[op.index++];
-  if (!action) {
-    logAdd(s.round, 'danger', 'Simulation halted: no valid action was available for the current DFS step.');
-    finishSim(false);
-    s.currentOperation = null;
-    return;
-  }
-  s.round++;
-  s.activeAgentId = action.agentId ?? null;
-  setStat('sRound', s.round);
-  highlightEdge(op.step.from, op.step.to);
-
-  if (action.type === 'move') {
-    moveAgent(action.agentId, op.step.from, op.step.to);
-  } else if (action.type === 'markDanger') {
-    logAdd(s.round, 'danger', `Edge (${op.step.from}->${op.step.to}) borders the known black hole; marked DANGEROUS without re-probing.`);
-  } else if (action.type === 'markMoveOnly') {
-    s.currentNode = op.step.to;
-    markCurrentNode(op.step.to);
-  } else if (action.type === 'noop') {
-    logAdd(s.round, 'info', 'No DFS movement was required this round.');
-  }
-
-  if (op.index >= op.actions.length) {
-    s.currentNode = op.step.to;
-    s.currentOperation = null;
-  }
-}
-
 function prepareOperation(s, step) {
   if (!step) {
-    return { kind: 'plain', step: { from: s.currentNode, to: s.currentNode }, actions: [{ type: 'noop' }], index: 0 };
+    return { step: { from: s.currentNode, to: s.currentNode }, actions: [{ type: 'noop' }], index: 0 };
   }
 
-  if (step.classify) {
-    return startCcpOperation(s, step);
-  }
-
+  const dangerous = step.to === s.bhNode;
   const actions = [];
-  const movers = s.agents.filter(a => a.alive && a.pos === step.from);
-  movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
-  if (movers.length === 0) {
-    logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical DFS cursor to ${step.to}.`);
-    actions.push({ type: 'markMoveOnly' });
+
+  if (dangerous) {
+    if (!s.bhLocated) {
+      const probes = s.agents
+        .filter(a => a.alive && !a.byzantine && a.pos === step.from)
+        .slice(0, s.f + 1);
+      probes.forEach(agent => actions.push({ type: 'lose', agentId: agent.id }));
+      if (probes.length < s.f + 1) {
+        logAdd(s.round, 'warn', `Only ${probes.length} good agent(s) available for the required f+1=${s.f + 1} CCP loss threshold.`);
+      }
+    } else {
+      actions.push({ type: 'markDanger' });
+    }
+  } else {
+    const movers = s.agents.filter(a => a.alive && a.pos === step.from);
+    movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id }));
+    if (movers.length === 0) {
+      logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical DFS cursor to ${step.to}.`);
+      actions.push({ type: 'markMoveOnly' });
+    }
   }
-  return { kind: 'plain', step, actions, index: 0 };
+
+  return { step, actions, index: 0 };
 }
 
 function moveAgent(agentId, from, to) {
@@ -303,172 +298,27 @@ function moveAgent(agentId, from, to) {
   logAdd(s.round, agent.byzantine ? 'byz' : 'info', `A${agent.id} moves ${from}->${to} (${agent.byzantine ? 'Byzantine' : 'good'}).`);
 }
 
-// --- Cascading Cautious Probe (CCP) — Algorithm 1 --------------------------
-//
-// Classifying a single unexplored port p at node u, leading to v:
-//   * P = probe pool already sent through p (never reused on this port)
-//   * R = subset of P that returned through p          ("safe" evidence)
-//   * D = subset of P that did NOT return through p     ("dangerous" evidence)
-//   * B = identified-Byzantine set (shared across the whole run)
-//   * threshold = f + 1 - |B|   (Lines 1, 11, 14, 24, 30)
-//
-// Round j sends a wave: f+1-|B| agents the first wave, one agent every wave
-// after that (Lines 7/18-20). Round j+1 reveals who returned. The port is
-// classified the instant |R| or |D| reaches the threshold (worst case after
-// 2f+1 agents have been committed, per Lemma 1).
-//
-// A "good" agent that enters a true black hole never returns -> added to D.
-// An "adversarial" Byzantine agent always returns, whatever the truth is,
-// and so always lands in R -> this is precisely what can stall a dangerous
-// port's classification and burn extra rounds (Lemma 2/3), and it is what
-// exposes that agent once the port finally resolves the other way.
-
-function startCcpOperation(s, step) {
-  const { from, to, label } = step;
-  const dangerousTruth = to === s.bhNode;
-  const port = `${from}->${to}`;
-
-  const op = {
-    kind: 'ccp',
-    step,
-    port,
-    from, to, label,
-    dangerousTruth,
-    P: new Set(),     // agents already committed to this port
-    R: new Set(),     // returned through p
-    D: new Set(),     // did not return through p
-    wave: [],
-    phase: 'send',    // 'send' -> 'await' -> 'send' -> ... -> 'resolved'
-  };
-
-  if (dangerousTruth && s.bhLocated) {
-    // Known-map shortcut: we already located the BH elsewhere; no need to
-    // spend more agents re-discovering an edge we can already classify.
-    op.phase = 'shortcut';
-  }
-
-  return op;
-}
-
-function ccpThreshold(s) {
-  return Math.max(1, s.f + 1 - s.identifiedByzantine.size);
-}
-
-function pickNextProbeBatch(s, op, size) {
-  // Prefer agents currently at the probing node `from` that have not yet
-  // been used on this port. Order: by id. Under the "adversarial" strategy
-  // Byzantine agents are not excluded — exactly like the paper, the probe
-  // group is just "the next agents in order", Byzantine or not. Under the
-  // "passive" strategy, Byzantine agents never volunteer for a probe.
-  const eligible = s.agents
-    .filter(a => a.alive && a.pos === op.from && !op.P.has(a.id))
-    .filter(a => s.byzStrategy === 'adversarial' || !a.byzantine)
-    .sort((a, b) => a.id - b.id);
-  return eligible.slice(0, size);
-}
-
-function runCcpRound(op) {
+function loseAgentToBlackHole(agentId, from, to) {
   const s = simState;
-
-  if (op.phase === 'shortcut') {
-    s.round++;
-    setStat('sRound', s.round);
-    highlightEdge(op.from, op.to);
-    logAdd(s.round, 'danger', `Port ${op.port} borders the already-located black hole; marked DANGEROUS without re-probing.`);
-    finalizeCcp(op, true, []);
-    s.currentOperation = null;
-    return;
-  }
-
-  if (op.phase === 'send') {
-    const batchSize = op.P.size === 0 ? ccpThreshold(s) : 1;
-    const batch = pickNextProbeBatch(s, op, batchSize);
-
-    if (batch.length === 0) {
-      logAdd(s.round, 'warn', `No live agents available at node ${op.from} to continue CCP on ${op.port}; halting probe.`);
-      finalizeCcp(op, op.D.size > op.R.size, []);
-      s.currentOperation = null;
-      return;
-    }
-
-    s.round++;
-    s.activeAgentId = batch[0].id;
-    setStat('sRound', s.round);
-    highlightEdge(op.from, op.to);
-
-    batch.forEach(a => { op.P.add(a.id); a.pos = op.to; });
-    op.wave = batch.map(a => a.id);
-
-    const ids = batch.map(a => `A${a.id}${a.byzantine ? '*' : ''}`).join(', ');
-    logAdd(s.round, 'info', `CCP wave on port ${op.port}: sending ${ids} (probe ${op.P.size}/${2 * s.f + 1} max).`);
-    updateCcpReadout(op.port, op.R.size, op.D.size, ccpThreshold(s));
-
-    op.phase = 'await';
-    return;
-  }
-
-  // phase === 'await': resolve this wave's outcome.
-  s.round++;
-  setStat('sRound', s.round);
-  highlightEdge(op.from, op.to);
-
-  const thresh = ccpThreshold(s);
-  const returningIds = [];
-  const stayingIds = [];
-
-  op.wave.forEach(id => {
-    const agent = s.agents.find(a => a.id === id);
-    if (!agent || !agent.alive) return;
-    const returns = agent.byzantine ? true : !op.dangerousTruth;
-    if (returns) {
-      agent.pos = op.from;
-      op.R.add(id);
-      returningIds.push(id);
-    } else {
-      agent.alive = false;
-      agent.status = 'dead';
-      agent.pos = op.to;
-      s.lostInBH++;
-      op.D.add(id);
-      stayingIds.push(id);
-    }
-  });
-
-  if (returningIds.length) {
-    logAdd(s.round, 'safe', `A${returningIds.join(', A')} return through ${op.port}. RETURNED=${op.R.size}/${thresh}.`);
-  }
-  if (stayingIds.length) {
-    logAdd(s.round, 'danger', `A${stayingIds.join(', A')} did NOT return through ${op.port}. FAILED-TO-RETURN=${op.D.size}/${thresh}.`);
-  }
-  s.currentNode = op.D.size >= op.R.size ? op.from : op.to;
-  markCurrentNode(s.currentNode);
-  updateCcpReadout(op.port, op.R.size, op.D.size, thresh);
-
-  if (op.R.size >= thresh) {
-    finalizeCcp(op, false, returningIds);
-    s.currentOperation = null;
-    return;
-  }
-  if (op.D.size >= thresh) {
-    finalizeCcp(op, true, []);
-    s.currentOperation = null;
-    return;
-  }
-
-  // Neither threshold hit yet (some Byzantine agents muddied the count) —
-  // cascade: send one more agent next round (Lines 17-20).
-  op.phase = 'send';
+  const agent = s.agents.find(a => a.id === agentId);
+  if (!agent || !agent.alive) return;
+  agent.alive = false;
+  agent.status = 'dead';
+  agent.pos = to;
+  s.lostInBH++;
+  s.currentNode = from;
+  markCurrentNode(from);
+  logAdd(s.round, 'danger', `A${agent.id} enters ${from}->${to} and is lost in the black hole (${s.lostInBH}/${s.f + 1}).`);
 }
 
-function finalizeCcp(op, dangerous, returningIds) {
+function completeOperation(op) {
   const s = simState;
-  const { from, to, label, port } = op;
+  const { from, to, classify, label } = op.step;
   const key = edgeKey(from, to);
   const cyEdge = getCyEdge(from, to);
-  cyEdge.removeClass('probing');
-  hideCcpReadout();
+  const dangerous = to === s.bhNode;
 
-  identifyByzantineFromProbe(op, dangerous);
+  cyEdge.removeClass('probing');
 
   if (dangerous) {
     s.edgeStatus[key] = 'dangerous';
@@ -477,12 +327,12 @@ function finalizeCcp(op, dangerous, returningIds) {
     s.currentNode = from;
     cyEdge.addClass('dangerous');
     cyRef.instance.getElementById(`n${to}`).removeClass('blackhole').addClass('revealed');
-    logAdd(s.round, 'danger', `CCP resolved port ${port}: DANGEROUS — ${op.D.size} agent(s) failed to return (BH at node ${to}). Probe used ${op.P.size} agent(s).`);
+    logAdd(s.round, 'danger', `CCP on edge (${from}->${to}): BLACK HOLE DETECTED. Total BH losses: ${s.lostInBH} (target f+1=${s.f + 1}).`);
     return;
   }
 
   s.currentNode = to;
-  if (s.edgeStatus[key] === 'unknown') {
+  if (classify && s.edgeStatus[key] === 'unknown') {
     s.edgeStatus[key] = 'safe';
     s.safeNodes.add(from);
     s.safeNodes.add(to);
@@ -490,32 +340,20 @@ function finalizeCcp(op, dangerous, returningIds) {
     cyEdge.addClass('safe');
     cyRef.instance.getElementById(`n${to}`).addClass('safe');
     cyRef.instance.getElementById(`n${from}`).addClass('safe');
-    logAdd(s.round, 'safe', `${label}: CCP resolved port ${port} as SAFE — ${op.R.size} agent(s) returned. Probe used ${op.P.size} agent(s).`);
+    maybeIdentifyByzantine(from, to);
+    logAdd(s.round, 'safe', `${label}: edge (${from}->${to}) certified SAFE after sequential CCP movement.`);
   }
-
-  // Move every other live agent still waiting at `from` for this edge onward
-  // too, so the team travels together once a port is certified safe.
-  s.agents
-    .filter(a => a.alive && a.pos === from && !op.P.has(a.id))
-    .forEach(a => { a.pos = to; });
 }
 
-function identifyByzantineFromProbe(op, dangerous) {
+function maybeIdentifyByzantine(from, to) {
   const s = simState;
-  // An adversarial Byzantine agent always returns. If the port turned out to
-  // be dangerous, every surviving returner that came from this probe's R set
-  // is provably Byzantine (Line 31). If the port was safe, anyone who failed
-  // to return (impossible for a truly-good agent on a safe port) would be
-  // the giveaway (Line 25) — but since adversarial Byzantines always return,
-  // that branch mainly matters for completeness.
-  const suspects = dangerous ? op.R : op.D;
-  suspects.forEach(id => {
-    const agent = s.agents.find(a => a.id === id);
-    if (!agent || !agent.byzantine || s.identifiedByzantine.has(id)) return;
-    s.identifiedByzantine.add(id);
-    agent.identified = true;
-    logAdd(s.round, 'byz', `Byzantine agent A${id} IDENTIFIED — its return behavior on port ${op.port} contradicted the resolved status.`);
-  });
+  const aliveByz = s.agents.filter(a => a.alive && a.byzantine && !s.identifiedByzantine.has(a.id));
+  if (aliveByz.length === 0 || Math.random() >= 0.4) return;
+
+  const byz = aliveByz[0];
+  s.identifiedByzantine.add(byz.id);
+  byz.identified = true;
+  logAdd(s.round, 'byz', `Byzantine agent A${byz.id} identified via CCP behavior on edge (${from}->${to})!`);
 }
 
 function shouldFinish(s) {
@@ -555,16 +393,9 @@ function progressPercent(s) {
   }
 
   if (s.traversalOrder.length === 0) return 100;
-  const op = s.currentOperation;
-  let opFraction = 0;
-  if (op) {
-    if (op.kind === 'ccp') {
-      const target = 2 * s.f + 1;
-      opFraction = target > 0 ? Math.min(1, op.P.size / target) : 0;
-    } else if (op.actions) {
-      opFraction = op.index / op.actions.length;
-    }
-  }
+  const opFraction = s.currentOperation
+    ? s.currentOperation.index / s.currentOperation.actions.length
+    : 0;
   return Math.min(100, (s.traversalIndex + opFraction) / s.traversalOrder.length * 100);
 }
 
@@ -689,7 +520,6 @@ export function resetSimulation() {
   $('edgeTable').innerHTML = '';
   $('agentList').innerHTML = '';
   $('agentLayer').innerHTML = '';
-  hideCcpReadout();
   ['sRound','sAlive','sLost','sByzFound','sEdgeSafe','sEdgeDanger'].forEach(id => setStat(id, '-'));
   $('progressBar').style.width = '0%';
   $('runBtn').disabled  = true;

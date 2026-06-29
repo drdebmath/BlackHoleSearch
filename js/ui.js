@@ -48,20 +48,6 @@ export function updateEdgeTable() {
   }
 }
 
-export function updateCcpReadout(port, R, D, threshold) {
-  const box = $('ccpReadout');
-  box.style.display = 'flex';
-  $('ccpPort').textContent = port;
-  $('ccpR').textContent = R;
-  $('ccpD').textContent = D;
-  $('ccpThresh').textContent = threshold;
-  $('ccpThresh2').textContent = threshold;
-}
-
-export function hideCcpReadout() {
-  $('ccpReadout').style.display = 'none';
-}
-
 export function showOverlay(type, title, sub) {
   const ov = $('overlay');
   ov.className = 'show ' + type;

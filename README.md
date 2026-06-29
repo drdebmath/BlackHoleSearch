@@ -40,13 +40,6 @@ black hole is unambiguously identified at the end of the exploration.
 - **Theoretical bounds** displayed as you tune the parameters — the team size
   `k`, time complexity, and algorithm name update in real time.
 
-### Byzantine strategy
-
-| Mode | Meaning |
-|---|---|
-| **Adversarial** | Byzantine agents can join any CCP probe, always survive, and always report a return (whether the port is actually safe or dangerous), trying to stall classification and mislead the team. |
-| **Passive** | Byzantine agents never volunteer for a probe, so they never get a chance to lie — but they also never get caught. |
-
 ### Communication models
 
 | Model | Meaning |
@@ -81,42 +74,24 @@ more than `f+1` honest agents.
 
 ## How it works (under the hood)
 
-The simulator runs a **real Cascading Cautious Probe (CCP)** per unexplored
-port, matching Algorithm 1 in the paper:
+The simulator probes one edge per round using a simplified CCP model:
 
 1. A physical **DFS** walk is precomputed from the homebase, including
    backtracking moves.
-2. To classify an unexplored port `p`, a probe wave is sent through it:
-   the **first wave is `f+1-|B|` agents** (`B` = already-identified
-   Byzantine agents), sent in a single round; every wave after that is
-   **one agent at a time**.
-3. The round after a wave is sent, the simulator checks who came back:
-   - `R` = agents that returned through `p` (evidence the port is *safe*).
-   - `D` = agents that did **not** return through `p` (evidence the port is
-     *dangerous*).
-   - The instant either `|R|` or `|D|` reaches `f+1-|B|`, the port is
-     classified — there is **no need for all `2f+1` agents to be exhausted**;
-     reaching the threshold either way is conclusive proof on its own.
-4. If nobody misbehaves, this takes exactly **2 rounds**. Every Byzantine
-   agent that gets folded into the probe and behaves adversarially adds
-   **2 more rounds** to the cascade (Lemma 2), with an absolute worst case of
-   **`2f+1` agents and `2f+2` rounds** to resolve a single port (Lemma 1).
-5. A good agent that walks into the real black hole never returns and is
-   removed from the simulation. A Byzantine agent **never dies** — under the
-   **Byzantine Strategy** setting:
-   - *Adversarial*: it can join any probe, always returns regardless of the
-     true status of the node, and is exposed as Byzantine the moment its
-     return behaviour contradicts the port's final classification.
-   - *Passive*: it never volunteers for a probe at all, so it can't stall a
-     classification, but it also can never be caught by CCP.
-6. The run finishes when the BH is located (known-map) or when every edge has
+2. Each round advances one agent by one step along the current DFS/CCP action.
+3. If `v` is the black hole, up to `f + 1` good agents are consumed (this is
+   the worst case for cautious probing under `f` Byzantine faults) and the
+   edge is flagged as *dangerous*.
+4. Otherwise the edge is *safe*, `v` is added to the explored set, and there
+   is a chance that any active Byzantine agent gets *identified* by its
+   inconsistent behaviour during the cross-check.
+5. The run finishes when the BH is located (known-map) or when every edge has
    been classified (unknown-map). The mission fails if every honest agent is
    consumed before that happens.
 
 > ⚠️ This is a **teaching / visualisation prototype**, not a verified
-> implementation of any published protocol, but the CCP step now follows
-> Algorithm 1's send/await/cascade structure and threshold logic directly,
-> rather than abstracting it into a single coin-flip.
+> implementation of any published protocol. The CCP step is abstracted into a
+> single coin-flip rather than a full round-based exchange.
 
 ---
 
