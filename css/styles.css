@@ -590,6 +590,41 @@ body.panels-collapsed .right-panel {
 .formula-box .hi-r { color: var(--danger); }
 .formula-box .hi-g { color: var(--safe); }
 
+.ccp-rules {
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 8px 10px;
+  background: rgba(0, 229, 255, 0.04);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.ccp-title {
+  color: var(--accent);
+  letter-spacing: 1.5px;
+  margin-bottom: 6px;
+}
+.ccp-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+  border-top: 1px solid rgba(74, 85, 104, 0.22);
+}
+.ccp-row span {
+  color: var(--dim);
+}
+.ccp-row b {
+  color: var(--text);
+  font-weight: 600;
+  text-align: right;
+}
+.edge-row small {
+  color: var(--dim);
+  font-size: 9px;
+  margin-left: 4px;
+}
+
 @media (max-width: 900px) {
   body { height: 100dvh; }
 
