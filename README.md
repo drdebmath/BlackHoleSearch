@@ -72,26 +72,23 @@ more than `f+1` honest agents.
 
 ---
 
-## How it works (under the hood)
+## How It Works (Under the Hood)
 
-The simulator probes one edge per round using a simplified CCP model:
+The simulator uses a traversal plan (DFS) to visit nodes and probes each unknown edge using the **Cascading Cautious Probe (CCP)** protocol.
 
-1. A physical **DFS** walk is precomputed from the homebase, including
-   backtracking moves.
-2. Each round advances one agent by one step along the current DFS/CCP action.
-3. If `v` is the black hole, up to `f + 1` good agents are consumed (this is
-   the worst case for cautious probing under `f` Byzantine faults) and the
-   edge is flagged as *dangerous*.
-4. Otherwise the edge is *safe*, `v` is added to the explored set, and there
-   is a chance that any active Byzantine agent gets *identified* by its
-   inconsistent behaviour during the cross-check.
-5. The run finishes when the BH is located (known-map) or when every edge has
-   been classified (unknown-map). The mission fails if every honest agent is
-   consumed before that happens.
+1.  **Traversal Plan**: A DFS-based plan is computed to ensure all nodes (known map) or edges (unknown map) are eventually visited.
+2.  **Probing an Edge**: To test an unknown edge `(u, v)`, the simulation executes the CCP protocol:
+    -   **Initial Wave**: A group of `f+1` agents are sent from `u` to `v`.
+    -   **Evaluation**: In the next round, the results are checked:
+        -   If all `f+1` agents return, the edge is certified **SAFE**.
+        -   If `f+1` agents are lost (fail to return), the edge is certified **DANGEROUS**, and the black hole is located at `v`. Any agent that *did* return from this edge is immediately blacklisted as Byzantine.
+    -   **Cascading Wave**: If the results are mixed (some return, some are lost), it implies Byzantine interference. The simulation enters a cascading phase, sending remaining honest agents one-by-one until a consensus of `f+1` returns or `f+1` losses is reached.
+3.  **Agent Logic**:
+    -   **Honest Agents** are destroyed if they enter the black hole.
+    -   **Byzantine Agents** are immune to the black hole. They can enter and return safely, allowing them to lie and report a dangerous edge as safe.
+4.  **Completion**: The simulation ends when the black hole is located (for known maps) or when all edges have been classified (for unknown maps). The mission fails if all honest agents are eliminated before the goal is met.
 
-> ⚠️ This is a **teaching / visualisation prototype**, not a verified
-> implementation of any published protocol. The CCP step is abstracted into a
-> single coin-flip rather than a full round-based exchange.
+> ⚠️ This is a **teaching and visualization prototype**. While it implements the core logic of the CCP protocol, it abstracts away certain network-level details like message authentication and synchronous rounds for clarity.
 
 ---
 

@@ -75,33 +75,11 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         </select>
       </label>
 
-      <label>
-        ADVERSARY
-        <select id="adversaryType">
-          <option value="none">None</option>
-          <option value="probabilistic" selected>Probabilistic</option>
-          <option value="intelligent">Intelligent</option>
-        </select>
-      </label>
-
-      <div class="control-group">
-        <label>
-          BH PROB — <span class="val-display" id="bhProbVal">20%</span>
-          <input type="range" id="bhProb" min="0" max="100" value="20">
-        </label>
-        <button id="manualTriggerBtn" title="Manually activate BBH for one round">TRIGGER</button>
-      </div>
-
       <div class="control-group">
         <label>MANUAL SPOOFING</label>
         <button id="spoofSafeBtn" title="Falsely mark a random SAFE edge as DANGEROUS">S->D</button>
         <button id="spoofDangerBtn" title="Falsely mark a random DANGEROUS edge as SAFE">D->S</button>
       </div>
-
-      <label>
-        CONFIRMATIONS — <span class="val-display" id="confirmVal">2</span>
-        <input type="range" id="confirmations" min="1" max="5" value="2">
-      </label>
 
       <div class="formula-box" id="formulaBox">
         — configure above —

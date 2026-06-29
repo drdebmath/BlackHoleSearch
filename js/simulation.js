@@ -2,12 +2,10 @@
 //
 // The simulator now keeps two levels of motion:
 // 1. a DFS traversal plan over the graph, including physical backtracking; and
-// 2. per-agent substeps, so only one agent moves or is lost per visual step.
 
 import { cyRef, runRef, simState, setSimState } from './state.js';
 import { generateGraph } from './graph-generation.js';
 import { initCy } from './cytoscape-setup.js';
-import { runAdversary } from './adversary.js';
 import {
   $, setStat, logAdd, logClear, updateAgentChips,
   updateEdgeTable, showOverlay, updateFormula,
@@ -24,9 +22,6 @@ export function buildGraph() {
   const f    = +$('fFault').value;
   const comm = $('commModel').value;
   const know = $('topoKnow').value;
-  const confirmations = +$('confirmations').value;
-  const adversaryType = $('adversaryType') ? $('adversaryType').value : null;
-  const bhProb = $('bhProb') ? +$('bhProb').value : null;
 
   const { nodes, edges } = generateGraph(topo, n);
   initCy(nodes, edges);
@@ -68,25 +63,20 @@ export function buildGraph() {
 
   const state = {
     n, f, k, homebase, bhNode, agents, neighbors, ports, edges,
-    edgeStatus, edgeConfirmations, know, comm, delta, confirmations,
-    adversaryType,
-    bhProb,
+    edgeStatus, edgeConfirmations, know, comm, delta,
     round: 0,
     tick: 0,
     moves: 0,
     done: false,
-    found: false,
     bhLocated: false,
     currentNode: homebase,
     visitedNodes: new Set([homebase]),
     nodeStatus: { [homebase]: { status: 'safe', round: 0 } },
-    adversaryDecision: { decision: 'dormant', drop: false, spoof: false },
-    bhActive: false,
     traversalOrder: [],
     traversalIndex: 0,
     currentOperation: null,
     activeAgentId: null,
-    identifiedByzantine: new Set(),
+    byzantineBlacklist: new Set(),
     lostInBH: 0,
   };
   state.traversalOrder = know === 'known'
@@ -268,33 +258,6 @@ function buildUnknownDFSPlan(state) {
 function advanceRound(s) {
     s.round++;
     setStat('sRound', s.round);
-    s.adversaryDecision = runAdversary(s, s.adversaryType);
-    s.bhActive = s.adversaryDecision.decision === 'active';
-
-    let logMsg = `ROUND ${s.round} START: BBH is ${s.bhActive ? 'ACTIVE' : 'DORMANT'}.`;
-    if (s.bhActive) {
-      logMsg += ` Drop: ${s.adversaryDecision.drop}, Spoof: ${s.adversaryDecision.spoof}`;
-    }
-    logAdd(s.round, 'system', logMsg);
-
-    if (s.adversaryDecision.spoof) {
-        runWhiteboardSpoofing(s);
-    }
-}
-
-function runWhiteboardSpoofing(s) {
-    const safeEdges = Object.keys(s.edgeStatus).filter(key => s.edgeStatus[key] === 'safe');
-    if (safeEdges.length === 0) return;
-
-    const edgeToSpoof = safeEdges[Math.floor(Math.random() * safeEdges.length)];
-    s.edgeStatus[edgeToSpoof] = 'dangerous';
-    
-    const [from, to] = edgeToSpoof.split('-').map(Number);
-    const cyEdge = getCyEdge(from, to);
-    cyEdge.removeClass('safe').addClass('dangerous');
-
-    logAdd(s.round, 'byz', `BBH SPOOFING: Edge (${edgeToSpoof}) falsely marked as DANGEROUS.`);
-    refreshDisplay();
 }
 
 export function manualSpoofEdge(fromStatus, toStatus) {
@@ -323,9 +286,6 @@ export function stepSimulation() {
   const s = simState;
   
   if (!s.currentOperation) {
-    if (s.tick % s.agents.length === 0) {
-        advanceRound(s);
-    }
     if (shouldFinish(s)) {
       finishSim(finishWasSuccessful(s));
       return;
@@ -333,12 +293,17 @@ export function stepSimulation() {
     s.currentOperation = prepareOperation(s, s.traversalOrder[s.traversalIndex]);
   }
 
+  advanceRound(s);
+
   const op = s.currentOperation;
   const action = op.actions[op.index++];
   if (!action) {
-    logAdd(s.round, 'danger', 'Simulation halted: no valid action was available for the current DFS step.');
-    finishSim(false);
-    return;
+    // This can happen if an operation completes but a new one (like a cascade) is prepared.
+    // We re-evaluate the operation completion logic.
+    if (op.index >= op.actions.length) {
+      completeOperation(op);
+    }
+    return; // Let the next tick handle the new state.
   }
   s.tick++;
   s.activeAgentId = action.agentId ?? null;
@@ -348,20 +313,16 @@ export function stepSimulation() {
     moveAgent(action.agentId, action.from ?? op.step.from, action.to ?? op.step.to);
   } else if (action.type === 'lose') {
     loseAgentToBlackHole(action.agentId, action.from ?? op.step.from, action.to ?? op.step.to);
-  } else if (action.type === 'markDanger') {
-    logAdd(s.round, 'danger', `Edge (${op.step.from}->${op.step.to}) borders the known black hole; marked DANGEROUS without another loss.`);
-  } else if (action.type === 'markMoveOnly') {
-    s.currentNode = op.step.to;
-    markCurrentNode(op.step.to);
   } else if (action.type === 'noop') {
     logAdd(s.round, 'info', 'No DFS movement was required this round.');
   }
 
   if (op.index >= op.actions.length) {
     completeOperation(op);
-    s.currentOperation = null;
-    if (s.traversalOrder.length > 0) {
-      s.traversalIndex = (s.traversalIndex + 1) % s.traversalOrder.length;
+    // completeOperation may have set up a new phase, so we don't nullify it here.
+    if (op.probe && op.probe.phase === 'complete') {
+      s.currentOperation = null;
+      s.traversalIndex++;
     }
   }
 
@@ -383,52 +344,213 @@ function prepareOperation(s, step) {
     return { step: { from: s.currentNode, to: s.currentNode }, actions: [{ type: 'noop' }], index: 0 };
   }
 
-  const isBHStep = step.to === s.bhNode;
-  const dangerous = isBHStep && s.bhActive;
+  if (step.kind === 'move') {
+    return prepareMoveOperation(s, step);
+  } else { // 'probe'
+    return prepareProbeOperation(s, step);
+  }
+}
+
+function prepareMoveOperation(s, step) {
   const actions = [];
+  const agentToMove = s.agents.find(a => a.alive && a.pos === step.from);
 
-  const attachStepEdges = (action) => {
-    action.from = action.from ?? step.from;
-    action.to = action.to ?? step.to;
-    return action;
-  };
-
-  const createStepActions = (agentId) => {
-    if (dangerous) {
-        const agent = s.agents.find(a => a.id === agentId);
-        if (agent && !agent.byzantine) {
-            if (s.adversaryDecision.drop) {
-                actions.push(attachStepEdges({ type: 'lose', agentId }));
-            } else {
-                logAdd(s.round, 'warn', `A${agentId} enters active BBH at ${step.to} but is SPARED.`);
-                actions.push(attachStepEdges({ type: 'move', agentId }));
-            }
-        } else {
-             actions.push(attachStepEdges({ type: 'move', agentId }));
-        }
-    } else {
-      actions.push(attachStepEdges({ type: 'move', agentId }));
-    }
-  };
-
-  const movers = s.agents.filter(a => a.alive && a.pos === step.from);
-  if (movers.length > 0) {
-    const agentToMove = movers[s.tick % movers.length];
-    createStepActions(agentToMove.id);
+  if (agentToMove) {
+    actions.push({ type: 'move', agentId: agentToMove.id, from: step.from, to: step.to });
   } else {
     const relocation = findAgentPathToTarget(s, step.from);
     if (relocation && relocation.path.length > 1) {
       actions.push(...buildMoveActionsForPath(relocation.agentId, relocation.path));
-      createStepActions(relocation.agentId);
+      actions.push({ type: 'move', agentId: relocation.agentId, from: step.from, to: step.to });
     } else if (relocation) {
-      createStepActions(relocation.agentId);
+      actions.push({ type: 'move', agentId: relocation.agentId, from: step.from, to: step.to });
     } else {
-      logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical DFS cursor to ${step.to}.`);
-      actions.push({ type: 'markMoveOnly' });
+      logAdd(s.round, 'warn', `No agent available to move from ${step.from} to ${step.to}. Skipping.`);
+      actions.push({ type: 'noop' });
     }
   }
-
   return { step, actions, index: 0 };
+}
+
+function prepareProbeOperation(s, step) {
+  const { from, to } = step;
+  const key = edgeKey(from, to);
+  if (s.edgeStatus[key] !== 'unknown') {
+    logAdd(s.round, 'info', `Skipping probe on (${from}->${to}); status is already '${s.edgeStatus[key]}'.`);
+    return { step, actions: [{ type: 'noop' }], index: 0 };
+  }
+
+  const availableAgents = s.agents.filter(a => a.alive && !s.byzantineBlacklist.has(a.id));
+  const agentsAtSource = availableAgents.filter(a => a.pos === from);
+
+  // Initial Wave: f+1 agents
+  const probeGroupSize = s.f + 1;
+  const probeGroup = agentsAtSource.slice(0, probeGroupSize);
+
+  if (probeGroup.length < probeGroupSize) {
+    logAdd(s.round, 'warn', `CCP on (${from}->${to}) delayed: need ${probeGroupSize} agents at ${from}, found ${probeGroup.length}.`);
+    const relocation = findAndDispatchAgent(s, from, availableAgents);
+    if (relocation) {
+      return { step, actions: relocation.actions, index: 0 };
+    }
+    return { step, actions: [{ type: 'noop' }], index: 0 }; // Wait for agents to arrive
+  }
+
+  const actions = [];
+  const isBHEdge = to === s.bhNode;
+
+  probeGroup.forEach(agent => {
+    if (isBHEdge) {
+      if (agent.byzantine) {
+        // Byzantine agent is immune, returns and can lie.
+        logAdd(s.round, 'byz', `Byzantine A${agent.id} probes BH edge, survives.`);
+        actions.push({ type: 'move', agentId: agent.id, from, to });
+        actions.push({ type: 'move', agentId: agent.id, to, from }); // Immediately returns
+      } else {
+        // Good agent is lost.
+        actions.push({ type: 'lose', agentId: agent.id, from, to });
+      }
+    } else {
+      // Safe edge, everyone returns.
+      actions.push({ type: 'move', agentId: agent.id, from, to });
+      actions.push({ type: 'move', agentId: agent.id, to, from });
+    }
+  });
+
+  return {
+    step,
+    actions,
+    index: 0,
+    probe: {
+      key,
+      phase: 'initial_wave',
+      group: probeGroup.map(a => a.id),
+      lost: new Set(),
+      returned: new Set(),
+    }
+  };
+}
+
+function completeOperation(op) {
+  const s = simState;
+  if (op.step.kind === 'move') {
+    s.currentNode = op.step.to;
+    markCurrentNode(op.step.to);
+  } else if (op.step.kind === 'probe') {
+    // If the operation was just to move an agent for a probe, don't evaluate yet.
+    if (op.probe) {
+      evaluateProbe(op);
+    } else {
+      s.currentOperation = null; // It was just a move, now we can re-attempt the probe
+    }
+  }
+}
+
+function evaluateProbe(op) {
+  const s = simState;
+  const { from, to } = op.step;
+  const key = edgeKey(from, to);
+  const cyEdge = getCyEdge(from, to);
+  cyEdge.removeClass('probing');
+
+  // Update probe results from the actions just executed
+  op.actions.forEach(action => {
+    if (action.type === 'lose') op.probe.lost.add(action.agentId);
+    if (action.type === 'move' && action.to === from) op.probe.returned.add(action.agentId);
+  });
+
+  const numLost = op.probe.lost.size;
+  const numReturned = op.probe.returned.size;
+
+  logAdd(s.round, 'system', `CCP results for (${from}->${to}): ${numReturned} returned, ${numLost} lost.`);
+
+  // Consensus checks
+  if (numReturned >= s.f + 1) { // Includes all f+1 from initial wave
+    s.edgeStatus[key] = 'safe';
+    cyEdge.addClass('safe');
+    s.visitedNodes.add(to);
+    cyRef.instance.getElementById(`n${to}`).addClass('safe');
+    logAdd(s.round, 'safe', `Edge (${from}->${to}) certified SAFE. (${numReturned} agents returned).`);
+    op.probe.phase = 'complete';
+
+    // Blacklist any agent who was in the probe group but was reported lost.
+    // This requires a more complex communication model where agents report who they saw.
+    // For now, we assume perfect knowledge of who was lost.
+
+  } else if (numLost >= s.f + 1) {
+    s.edgeStatus[key] = 'dangerous';
+    s.bhLocated = true;
+    cyEdge.addClass('dangerous');
+    cyRef.instance.getElementById(`n${to}`).removeClass('blackhole').addClass('revealed');
+    logAdd(s.round, 'danger', `Edge (${from}->${to}) certified DANGEROUS. (${numLost} agents lost).`);
+    op.probe.phase = 'complete';
+
+    // Blacklist any agent who returned from this now-confirmed dangerous edge.
+    op.probe.returned.forEach(agentId => {
+      if (!s.byzantineBlacklist.has(agentId)) {
+        s.byzantineBlacklist.add(agentId);
+        const agent = s.agents.find(a => a.id === agentId);
+        if (agent) agent.identified = true;
+        logAdd(s.round, 'byz', `Agent A${agentId} returned from a DANGEROUS edge and is now blacklisted as Byzantine.`);
+      }
+    });
+  } else {
+    // INCONCLUSIVE: This implies Byzantine activity. Trigger the cascading wave.
+    logAdd(s.round, 'warn', `CCP on (${from}->${to}) is INCONCLUSIVE. Starting cascading wave.`);
+    op.probe.phase = 'cascading';
+
+    const sentAgents = new Set([...op.probe.returned, ...op.probe.lost]);
+    const remainingAgents = s.agents.filter(a => a.alive && !s.byzantineBlacklist.has(a.id) && !sentAgents.has(a.id));
+
+    if (remainingAgents.length === 0) {
+      logAdd(s.round, 'danger', `CCP FAILED on (${from}->${to}): No more agents available to break tie.`);
+      op.probe.phase = 'complete'; // Mark as done to avoid getting stuck
+      return;
+    }
+
+    // Find the next agent to send. If not at the source, dispatch them.
+    let nextAgent = remainingAgents.find(a => a.pos === from);
+    if (!nextAgent) {
+      const dispatch = findAndDispatchAgent(s, from, remainingAgents);
+      if (dispatch) {
+        logAdd(s.round, 'system', `Dispatching A${dispatch.agentId} to ${from} for cascading probe.`);
+        op.actions = dispatch.actions;
+        op.index = 0;
+        return; // Let the move actions execute
+      } else {
+        logAdd(s.round, 'danger', `CCP FAILED on (${from}->${to}): Cannot route an agent to the probe site.`);
+        op.probe.phase = 'complete';
+        return;
+      }
+    } else {
+      // Agent is ready at the source node, prepare the single-agent probe action.
+      logAdd(s.round, 'system', `Cascading wave: sending A${nextAgent.id} through (${from}->${to}).`);
+      const isBHEdge = to === s.bhNode;
+      const actions = [];
+      if (isBHEdge) {
+        if (nextAgent.byzantine) {
+          actions.push({ type: 'move', agentId: nextAgent.id, from, to });
+          actions.push({ type: 'move', agentId: nextAgent.id, to, from });
+        } else {
+          actions.push({ type: 'lose', agentId: nextAgent.id, from, to });
+        }
+      } else {
+        actions.push({ type: 'move', agentId: nextAgent.id, from, to });
+        actions.push({ type: 'move', agentId: nextAgent.id, to, from });
+      }
+      op.actions = actions;
+      op.index = 0;
+    }
+  }
+}
+
+function findAndDispatchAgent(s, targetNode, agentPool) {
+  const relocation = findAgentPathToTarget(s, targetNode, agentPool);
+  if (relocation) {
+    return { agentId: relocation.agentId, actions: buildMoveActionsForPath(relocation.agentId, relocation.path) };
+  } else {
+    return null;
+  }
 }
 
 function moveAgent(agentId, from, to) {
@@ -450,7 +572,7 @@ function loseAgentToBlackHole(agentId, from, to) {
   agent.status = 'dead';
   agent.pos = to;
   s.lostInBH++;
-  s.currentNode = from;
+  s.currentNode = from; // The "team" retreats to the safe side
   markCurrentNode(from);
   logAdd(s.round, 'danger', `A${agent.id} enters ${from}->${to} and is lost in the black hole (${s.lostInBH}/${s.f + 1}).`);
 
@@ -461,60 +583,11 @@ function loseAgentToBlackHole(agentId, from, to) {
   }
 }
 
-function completeOperation(op) {
-  const s = simState;
-  const { from, to, classify, label } = op.step;
-  const key = edgeKey(from, to);
-  const cyEdge = getCyEdge(from, to);
-  const dangerous = to === s.bhNode && s.adversaryDecision.drop;
-
-  cyEdge.removeClass('probing');
-
-  if (dangerous) {
-    s.edgeStatus[key] = 'dangerous';
-    s.found = true;
-    s.bhLocated = true;
-    s.currentNode = from;
-    cyEdge.addClass('dangerous');
-    cyRef.instance.getElementById(`n${to}`).removeClass('blackhole').addClass('revealed');
-    logAdd(s.round, 'danger', `CCP on edge (${from}->${to}): BLACK HOLE DETECTED. Total BH losses: ${s.lostInBH} (target f+1=${s.f + 1}).`);
-    return;
-  }
-
-  s.currentNode = to;
-  if (classify && s.edgeStatus[key] === 'unknown') {
-    const confirmations = s.edgeConfirmations[key];
-    confirmations.add(s.activeAgentId);
-
-    if (confirmations.size >= s.confirmations) {
-        s.edgeStatus[key] = 'safe';
-        if (!s.nodeStatus) s.nodeStatus = {};
-        s.nodeStatus[from] = { status: 'safe', round: s.round };
-        s.nodeStatus[to]   = { status: 'safe', round: s.round };
-        s.visitedNodes.add(to);
-        cyEdge.addClass('safe');
-        cyRef.instance.getElementById(`n${to}`).addClass('safe');
-        cyRef.instance.getElementById(`n${from}`).addClass('safe');
-        maybeIdentifyByzantine(from, to);
-        logAdd(s.round, 'safe', `${label}: edge (${from}->${to}) certified SAFE after ${confirmations.size} confirmations.`);
-    } else {
-        logAdd(s.round, 'info', `Edge (${from}->${to}) has ${confirmations.size}/${s.confirmations} confirmations.`);
-    }
-  }
-}
-
-function maybeIdentifyByzantine(from, to) {
-  const s = simState;
-  const aliveByz = s.agents.filter(a => a.alive && a.byzantine && !s.identifiedByzantine.has(a.id));
-  if (aliveByz.length === 0 || Math.random() >= 0.4) return;
-
-  const byz = aliveByz[0];
-  s.identifiedByzantine.add(byz.id);
-  byz.identified = true;
-  logAdd(s.round, 'byz', `Byzantine agent A${byz.id} identified via CCP behavior on edge (${from}->${to})!`);
-}
-
 function shouldFinish(s) {
+  if (s.traversalIndex >= s.traversalOrder.length) {
+    return true;
+  }
+  if (s.know === 'known' && s.bhLocated) return true;
   return false;
 }
 
@@ -535,7 +608,7 @@ function refreshDisplay() {
   setStat('sEdgeDanger', edgeDanger);
   setStat('sAlive', s.agents.filter(a => a.alive).length);
   setStat('sLost', s.lostInBH);
-  setStat('sByzFound', s.identifiedByzantine.size);
+  setStat('sByzFound', s.byzantineBlacklist.size);
   setStat('sMoves', s.moves);
   $('progressBar').style.width = progressPercent(s) + '%';
   updateAgentChips();

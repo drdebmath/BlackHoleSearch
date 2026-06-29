@@ -7,10 +7,6 @@ import { toggleSimulationLoop } from './simulation_loop.js';
 
 const nNodes  = $('nNodes');
 const fFault  = $('fFault');
-const advType  = $('adversaryType');
-const bhProbEl = $('bhProb');
-const confirmationsEl = $('confirmations');
-const manualTriggerBtn = $('manualTriggerBtn');
 const spoofSafeBtn = $('spoofSafeBtn');
 const spoofDangerBtn = $('spoofDangerBtn');
 const runBtn  = $('runBtn');
@@ -70,29 +66,8 @@ nNodes.oninput = () => { $('nVal').textContent = nNodes.value; updateFormula(); 
 fFault.oninput = () => { $('fVal').textContent = fFault.value; updateFormula(); };
 $('topoKnow').onchange = updateFormula;
 $('commModel').onchange = updateFormula;
-if (advType) advType.onchange = () => {};
-if (bhProbEl) {
-  bhProbEl.oninput = () => { $('bhProbVal').textContent = bhProbEl.value + '%'; };
-  $('bhProbVal').textContent = bhProbEl.value + '%';
-}
-if (confirmationsEl) {
-    confirmationsEl.oninput = () => { $('confirmVal').textContent = confirmationsEl.value; };
-    $('confirmVal').textContent = confirmationsEl.value;
-}
-if (manualTriggerBtn) {
-    manualTriggerBtn.onclick = () => {
-        if (simState && simState.bhNode) {
-            simState.manualBHTrigger = true;
-            logAdd(simState.round, 'system', 'Manual override: BBH will be ACTIVE next round.');
-        }
-    };
-}
-if(spoofSafeBtn) {
-    spoofSafeBtn.onclick = () => manualSpoofEdge('safe', 'dangerous');
-}
-if(spoofDangerBtn) {
-    spoofDangerBtn.onclick = () => manualSpoofEdge('dangerous', 'safe');
-}
+if (spoofSafeBtn) spoofSafeBtn.onclick = () => manualSpoofEdge('safe', 'dangerous');
+if (spoofDangerBtn) spoofDangerBtn.onclick = () => manualSpoofEdge('dangerous', 'safe');
 
 
 $('buildBtn').onclick = buildGraph;
