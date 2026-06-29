@@ -233,7 +233,7 @@ export function stepSimulation() {
   s.round++;
   s.activeAgentId = action.agentId ?? null;
   setStat('sRound', s.round);
-  highlightEdge(action.from ?? op.step.from, action.to ?? op.step.to);
+  highlightEdge(action.from ?? op.step.from, action.to ?? op.step.to, action.type === 'moveCluster' ? 'release' : 'probing');
 
   if (action.type === 'move') {
     moveAgent(action.agentId, action.from ?? op.step.from, action.to ?? op.step.to);
@@ -296,7 +296,14 @@ function prepareMoveOperation(s, step) {
   }
 
   const movers = s.agents.filter(a => a.alive && a.pos === step.from);
-  movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id, from: step.from, to: step.to }));
+  const shouldReleaseCluster = (s.know === 'unknown' || s.edgeStatus[key] === 'safe') && movers.length > 1;
+
+  if (shouldReleaseCluster) {
+    actions.push({ type: 'moveCluster', agentIds: movers.map(agent => agent.id), from: step.from, to: step.to });
+  } else {
+    movers.forEach(agent => actions.push({ type: 'move', agentId: agent.id, from: step.from, to: step.to }));
+  }
+
   if (movers.length === 0) {
     logAdd(s.round, 'warn', `No live agents at node ${step.from}; advancing logical DFS cursor to ${step.to}.`);
     actions.push({ type: 'markMoveOnly' });
@@ -644,7 +651,7 @@ function finishSim(success) {
   clearInterval(runRef.intervalId);
   runRef.intervalId = null;
 
-  cyRef.instance.edges().removeClass('probing');
+  cyRef.instance.edges().removeClass('probing').removeClass('release');
   refreshDisplay();
   $('progressBar').style.width = '100%';
   $('runBtn').textContent = 'RUN SIMULATION';
@@ -668,10 +675,10 @@ function finishSim(success) {
   $('stepBtn').disabled = true;
 }
 
-function highlightEdge(from, to) {
+function highlightEdge(from, to, mode = 'probing') {
   const cy = cyRef.instance;
-  cy.edges().removeClass('probing');
-  getCyEdge(from, to).addClass('probing');
+  cy.edges().removeClass('probing').removeClass('release');
+  getCyEdge(from, to).addClass(mode);
 }
 
 function markCurrentNode(nodeId) {
