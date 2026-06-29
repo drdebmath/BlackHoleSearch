@@ -1,19 +1,22 @@
 // Entry point: wires up DOM events and starts the simulator.
 
-import { cyRef, runRef, simState } from './state.js';
-import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph, manualSpoofEdge } from './simulation.js';
-import { $, updateFormula, closeOverlay, switchTab, logAdd } from './ui.js';
-import { toggleSimulationLoop } from './simulation_loop.js';
+import { cyRef, runRef } from './state.js';
+import {
+  buildGraph, stepSimulation, resetSimulation,
+  renderAgentsOnGraph, replayBack, replayForward,
+} from './simulation.js';
+import { $, updateFormula, closeOverlay, switchTab } from './ui.js';
 
-const nNodes  = $('nNodes');
-const fFault  = $('fFault');
-const spoofSafeBtn = $('spoofSafeBtn');
-const spoofDangerBtn = $('spoofDangerBtn');
-const runBtn  = $('runBtn');
+const nNodes      = $('nNodes');
+const fFault      = $('fFault');
+const runBtn      = $('runBtn');
 const panelToggle = $('panelToggle');
-const panelStoreKey = 'bhs-panels-collapsed';
+
+const panelStoreKey       = 'bhs-panels-collapsed';
 const mobilePanelStoreKey = 'bhs-mobile-panels-collapsed';
-const mobilePanelQuery = window.matchMedia('(max-width: 900px)');
+const mobilePanelQuery    = window.matchMedia('(max-width: 900px)');
+
+// ── Viewport / Panel Toggle ──────────────────────────────────────────────────
 
 function refreshGraphViewport() {
   window.setTimeout(() => {
@@ -60,28 +63,49 @@ if (panelToggle) {
     mobilePanelQuery.addListener(syncPanelStateForViewport);
   }
 }
+
 window.addEventListener('resize', refreshGraphViewport);
+
+// ── Sliders ──────────────────────────────────────────────────────────────────
 
 nNodes.oninput = () => { $('nVal').textContent = nNodes.value; updateFormula(); };
 fFault.oninput = () => { $('fVal').textContent = fFault.value; updateFormula(); };
 $('topoKnow').onchange = updateFormula;
 $('commModel').onchange = updateFormula;
-if (spoofSafeBtn) spoofSafeBtn.onclick = () => manualSpoofEdge('safe', 'dangerous');
-if (spoofDangerBtn) spoofDangerBtn.onclick = () => manualSpoofEdge('dangerous', 'safe');
 
+// ── Main Buttons ─────────────────────────────────────────────────────────────
 
 $('buildBtn').onclick = buildGraph;
 $('resetBtn').onclick = resetSimulation;
 $('stepBtn').onclick  = stepSimulation;
 
 runBtn.onclick = () => {
-  toggleSimulationLoop();
+  if (runRef.intervalId) {
+    clearInterval(runRef.intervalId);
+    runRef.intervalId = null;
+    runBtn.textContent = '▶ RUN SIMULATION';
+  } else {
+    const speed = +$('speedSel').value;
+    runRef.intervalId = setInterval(stepSimulation, speed);
+    runBtn.textContent = '⏸ PAUSE';
+  }
 };
+
+// ── Replay Buttons ────────────────────────────────────────────────────────────
+
+const replayBackBtn = $('replayBack');
+const replayFwdBtn  = $('replayFwd');
+if (replayBackBtn) replayBackBtn.addEventListener('click', replayBack);
+if (replayFwdBtn)  replayFwdBtn.addEventListener('click', replayForward);
+
+// ── Overlay + Tabs ────────────────────────────────────────────────────────────
 
 $('overlayCloseBtn').addEventListener('click', closeOverlay);
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });
+
+// ── Init ─────────────────────────────────────────────────────────────────────
 
 updateFormula();
 buildGraph();

@@ -58,7 +58,6 @@ function buildGrid(n, addEdge, edges) {
     if ((i + 1) % cols !== 0 && i + 1 < n) addEdge(i, i + 1);
     if (i + cols < n) addEdge(i, i + cols);
   }
-  // Patch connectivity in case rounding left orphans
   const visited = new Set([0]);
   const queue = [0];
   while (queue.length) {
@@ -91,7 +90,6 @@ function applyGridPositions(nodes, n) {
 }
 
 function buildRandomConnected(n, addEdge, edges) {
-  // Spanning path first to guarantee connectivity, then sprinkle extras
   const perm = shuffle([...Array(n).keys()]);
   for (let i = 1; i < n; i++) addEdge(perm[i - 1], perm[i]);
   const extraEdges = Math.floor(n * 0.6);
