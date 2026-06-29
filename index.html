@@ -84,9 +84,23 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         </select>
       </label>
 
+      <div class="control-group">
+        <label>
+          BH PROB — <span class="val-display" id="bhProbVal">20%</span>
+          <input type="range" id="bhProb" min="0" max="100" value="20">
+        </label>
+        <button id="manualTriggerBtn" title="Manually activate BBH for one round">TRIGGER</button>
+      </div>
+
+      <div class="control-group">
+        <label>MANUAL SPOOFING</label>
+        <button id="spoofSafeBtn" title="Falsely mark a random SAFE edge as DANGEROUS">S->D</button>
+        <button id="spoofDangerBtn" title="Falsely mark a random DANGEROUS edge as SAFE">D->S</button>
+      </div>
+
       <label>
-        BH PROB — <span class="val-display" id="bhProbVal">20%</span>
-        <input type="range" id="bhProb" min="0" max="100" value="20">
+        CONFIRMATIONS — <span class="val-display" id="confirmVal">2</span>
+        <input type="range" id="confirmations" min="1" max="5" value="2">
       </label>
 
       <div class="formula-box" id="formulaBox">
@@ -143,6 +157,10 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
       <div class="stat-cell">
         <div class="stat-label">ROUND</div>
         <div class="stat-val sv-cyan" id="sRound">0</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-label">TOTAL MOVES</div>
+        <div class="stat-val sv-cyan" id="sMoves">0</div>
       </div>
       <div class="stat-cell">
         <div class="stat-label">AGENTS ALIVE</div>
@@ -206,6 +224,6 @@ themeToggle.onclick = () => {
 };
 syncThemeToggle();
 </script>
-<footer class="footer-credit">Developed by Vansh Gupta v3.1</footer>
+<footer class="footer-credit">Developed by Vansh Gupta v3.2</footer>
 </body>
 </html>

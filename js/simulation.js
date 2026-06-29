@@ -14,16 +14,17 @@ import {
 } from './ui.js';
 
 export function buildGraph() {
-  clearInterval(runRef.intervalId);
-  runRef.intervalId = null;
-  $('runBtn').textContent = 'RUN SIMULATION';
+  if (runRef.isRunning) {
+    stopSimulationLoop();
+  }
+  $('runBtn').textContent = '▶ RUN SIMULATION';
 
   const topo = $('topoSelect').value;
   const n    = +$('nNodes').value;
   const f    = +$('fFault').value;
   const comm = $('commModel').value;
   const know = $('topoKnow').value;
-  // Adversary settings (optional controls in UI)
+  const confirmations = +$('confirmations').value;
   const adversaryType = $('adversaryType') ? $('adversaryType').value : null;
   const bhProb = $('bhProb') ? +$('bhProb').value : null;
 
@@ -56,26 +57,30 @@ export function buildGraph() {
   for (let i = 0; i < n; i++) ports[i] = [...new Set(neighbors[i])].sort((a, b) => a - b);
 
   const edgeStatus = {};
+  const edgeConfirmations = {};
   edges.forEach(e => {
     const s = +e.data.source.slice(1);
     const t = +e.data.target.slice(1);
-    edgeStatus[edgeKey(s, t)] = 'unknown';
+    const key = edgeKey(s,t);
+    edgeStatus[key] = 'unknown';
+    edgeConfirmations[key] = new Set();
   });
 
   const state = {
     n, f, k, homebase, bhNode, agents, neighbors, ports, edges,
-    edgeStatus, know, comm, delta,
+    edgeStatus, edgeConfirmations, know, comm, delta, confirmations,
     adversaryType,
     bhProb,
     round: 0,
+    tick: 0,
+    moves: 0,
     done: false,
     found: false,
     bhLocated: false,
     currentNode: homebase,
     visitedNodes: new Set([homebase]),
-    // Ephemeral knowledge about nodes: { [nodeId]: { status: 'safe'|'dangerous', round: <number> } }
     nodeStatus: { [homebase]: { status: 'safe', round: 0 } },
-    // Whether BBH is active this round (controlled by adversary)
+    adversaryDecision: { decision: 'dormant', drop: false, spoof: false },
     bhActive: false,
     traversalOrder: [],
     traversalIndex: 0,
@@ -96,6 +101,7 @@ export function buildGraph() {
   updateEdgeTable();
   renderAgentsOnGraph();
   setStat('sRound', 0);
+  setStat('sMoves', 0);
   setStat('sAlive', agents.filter(a => a.alive).length);
   setStat('sLost', 0);
   setStat('sByzFound', 0);
@@ -174,6 +180,7 @@ function findAgentPathToTarget(s, target) {
       if (blockedNode !== null && next === blockedNode) continue;
       const key = edgeKey(cur, next);
       if (s.edgeStatus[key] === 'dangerous') continue;
+      if (s.edgeStatus[key] === 'unknown') continue; // Don't use unconfirmed edges
       parent.set(next, cur);
       sourceAgent.set(next, sourceAgent.get(cur));
       if (next === target) {
@@ -258,14 +265,67 @@ function buildUnknownDFSPlan(state) {
   return plan;
 }
 
+function advanceRound(s) {
+    s.round++;
+    setStat('sRound', s.round);
+    s.adversaryDecision = runAdversary(s, s.adversaryType);
+    s.bhActive = s.adversaryDecision.decision === 'active';
+
+    let logMsg = `ROUND ${s.round} START: BBH is ${s.bhActive ? 'ACTIVE' : 'DORMANT'}.`;
+    if (s.bhActive) {
+      logMsg += ` Drop: ${s.adversaryDecision.drop}, Spoof: ${s.adversaryDecision.spoof}`;
+    }
+    logAdd(s.round, 'system', logMsg);
+
+    if (s.adversaryDecision.spoof) {
+        runWhiteboardSpoofing(s);
+    }
+}
+
+function runWhiteboardSpoofing(s) {
+    const safeEdges = Object.keys(s.edgeStatus).filter(key => s.edgeStatus[key] === 'safe');
+    if (safeEdges.length === 0) return;
+
+    const edgeToSpoof = safeEdges[Math.floor(Math.random() * safeEdges.length)];
+    s.edgeStatus[edgeToSpoof] = 'dangerous';
+    
+    const [from, to] = edgeToSpoof.split('-').map(Number);
+    const cyEdge = getCyEdge(from, to);
+    cyEdge.removeClass('safe').addClass('dangerous');
+
+    logAdd(s.round, 'byz', `BBH SPOOFING: Edge (${edgeToSpoof}) falsely marked as DANGEROUS.`);
+    refreshDisplay();
+}
+
+export function manualSpoofEdge(fromStatus, toStatus) {
+    if (!simState) return;
+    const s = simState;
+    const edges = Object.keys(s.edgeStatus).filter(key => s.edgeStatus[key] === fromStatus);
+    if (edges.length === 0) {
+        logAdd(s.round, 'system', `Manual spoof failed: No edges with status '${fromStatus}'.`);
+        return;
+    }
+
+    const edgeToSpoof = edges[Math.floor(Math.random() * edges.length)];
+    s.edgeStatus[edgeToSpoof] = toStatus;
+
+    const [from, to] = edgeToSpoof.split('-').map(Number);
+    const cyEdge = getCyEdge(from, to);
+    cyEdge.removeClass(fromStatus).addClass(toStatus);
+
+    logAdd(s.round, 'byz', `MANUAL SPOOF: Edge (${edgeToSpoof}) changed from ${fromStatus.toUpperCase()} to ${toStatus.toUpperCase()}.`);
+    refreshDisplay();
+}
+
 export function stepSimulation() {
   if (!simState || simState.done) return;
 
   const s = simState;
-  // Adversary decides whether BBH is active this round
-  s.bhActive = runAdversary(simState, s.adversaryType) === 'active';
-  logAdd(s.round, 'system', `BBH is ${s.bhActive ? 'ACTIVE' : 'DORMANT'} this round.`);
+  
   if (!s.currentOperation) {
+    if (s.tick % s.agents.length === 0) {
+        advanceRound(s);
+    }
     if (shouldFinish(s)) {
       finishSim(finishWasSuccessful(s));
       return;
@@ -280,9 +340,8 @@ export function stepSimulation() {
     finishSim(false);
     return;
   }
-  s.round++;
+  s.tick++;
   s.activeAgentId = action.agentId ?? null;
-  setStat('sRound', s.round);
   highlightEdge(action.from ?? op.step.from, action.to ?? op.step.to);
 
   if (action.type === 'move') {
@@ -324,8 +383,8 @@ function prepareOperation(s, step) {
     return { step: { from: s.currentNode, to: s.currentNode }, actions: [{ type: 'noop' }], index: 0 };
   }
 
-  // A step is dangerous only if it targets the BH node AND the BBH is active this round
-  const dangerous = step.to === s.bhNode && s.bhActive;
+  const isBHStep = step.to === s.bhNode;
+  const dangerous = isBHStep && s.bhActive;
   const actions = [];
 
   const attachStepEdges = (action) => {
@@ -336,16 +395,17 @@ function prepareOperation(s, step) {
 
   const createStepActions = (agentId) => {
     if (dangerous) {
-      if (!s.bhLocated) {
         const agent = s.agents.find(a => a.id === agentId);
         if (agent && !agent.byzantine) {
-          actions.push(attachStepEdges({ type: 'lose', agentId }));
+            if (s.adversaryDecision.drop) {
+                actions.push(attachStepEdges({ type: 'lose', agentId }));
+            } else {
+                logAdd(s.round, 'warn', `A${agentId} enters active BBH at ${step.to} but is SPARED.`);
+                actions.push(attachStepEdges({ type: 'move', agentId }));
+            }
         } else {
-          logAdd(s.round, 'warn', `No good agent available at node ${step.from} to perform BH probe after relocation.`);
+             actions.push(attachStepEdges({ type: 'move', agentId }));
         }
-      } else {
-        actions.push(attachStepEdges({ type: 'markDanger' }));
-      }
     } else {
       actions.push(attachStepEdges({ type: 'move', agentId }));
     }
@@ -353,7 +413,8 @@ function prepareOperation(s, step) {
 
   const movers = s.agents.filter(a => a.alive && a.pos === step.from);
   if (movers.length > 0) {
-    movers.forEach(agent => actions.push(attachStepEdges({ type: 'move', agentId: agent.id })));
+    const agentToMove = movers[s.tick % movers.length];
+    createStepActions(agentToMove.id);
   } else {
     const relocation = findAgentPathToTarget(s, step.from);
     if (relocation && relocation.path.length > 1) {
@@ -374,6 +435,7 @@ function moveAgent(agentId, from, to) {
   const s = simState;
   const agent = s.agents.find(a => a.id === agentId);
   if (!agent || !agent.alive) return;
+  s.moves++;
   agent.pos = to;
   s.currentNode = to;
   markCurrentNode(to);
@@ -392,7 +454,6 @@ function loseAgentToBlackHole(agentId, from, to) {
   markCurrentNode(from);
   logAdd(s.round, 'danger', `A${agent.id} enters ${from}->${to} and is lost in the black hole (${s.lostInBH}/${s.f + 1}).`);
 
-  // Ephemeral memory: if this node was previously considered safe, mark it dangerous now
   if (s.nodeStatus && s.nodeStatus[to] && s.nodeStatus[to].status === 'safe') {
     s.nodeStatus[to] = { status: 'dangerous', round: s.round };
     cyRef.instance.getElementById(`n${to}`).removeClass('safe').addClass('trap');
@@ -405,7 +466,7 @@ function completeOperation(op) {
   const { from, to, classify, label } = op.step;
   const key = edgeKey(from, to);
   const cyEdge = getCyEdge(from, to);
-  const dangerous = to === s.bhNode;
+  const dangerous = to === s.bhNode && s.adversaryDecision.drop;
 
   cyEdge.removeClass('probing');
 
@@ -422,17 +483,23 @@ function completeOperation(op) {
 
   s.currentNode = to;
   if (classify && s.edgeStatus[key] === 'unknown') {
-    s.edgeStatus[key] = 'safe';
-    // Record ephemeral safety with the current round
-    if (!s.nodeStatus) s.nodeStatus = {};
-    s.nodeStatus[from] = { status: 'safe', round: s.round };
-    s.nodeStatus[to]   = { status: 'safe', round: s.round };
-    s.visitedNodes.add(to);
-    cyEdge.addClass('safe');
-    cyRef.instance.getElementById(`n${to}`).addClass('safe');
-    cyRef.instance.getElementById(`n${from}`).addClass('safe');
-    maybeIdentifyByzantine(from, to);
-    logAdd(s.round, 'safe', `${label}: edge (${from}->${to}) certified SAFE after sequential CCP movement.`);
+    const confirmations = s.edgeConfirmations[key];
+    confirmations.add(s.activeAgentId);
+
+    if (confirmations.size >= s.confirmations) {
+        s.edgeStatus[key] = 'safe';
+        if (!s.nodeStatus) s.nodeStatus = {};
+        s.nodeStatus[from] = { status: 'safe', round: s.round };
+        s.nodeStatus[to]   = { status: 'safe', round: s.round };
+        s.visitedNodes.add(to);
+        cyEdge.addClass('safe');
+        cyRef.instance.getElementById(`n${to}`).addClass('safe');
+        cyRef.instance.getElementById(`n${from}`).addClass('safe');
+        maybeIdentifyByzantine(from, to);
+        logAdd(s.round, 'safe', `${label}: edge (${from}->${to}) certified SAFE after ${confirmations.size} confirmations.`);
+    } else {
+        logAdd(s.round, 'info', `Edge (${from}->${to}) has ${confirmations.size}/${s.confirmations} confirmations.`);
+    }
   }
 }
 
@@ -448,7 +515,6 @@ function maybeIdentifyByzantine(from, to) {
 }
 
 function shouldFinish(s) {
-  // Perpetual exploration mode: never finish automatically. Traversal index wraps elsewhere.
   return false;
 }
 
@@ -470,6 +536,7 @@ function refreshDisplay() {
   setStat('sAlive', s.agents.filter(a => a.alive).length);
   setStat('sLost', s.lostInBH);
   setStat('sByzFound', s.identifiedByzantine.size);
+  setStat('sMoves', s.moves);
   $('progressBar').style.width = progressPercent(s) + '%';
   updateAgentChips();
   updateEdgeTable();
@@ -493,13 +560,14 @@ function finishSim(success) {
   const s = simState;
   s.done = true;
   s.activeAgentId = null;
-  clearInterval(runRef.intervalId);
-  runRef.intervalId = null;
+  if (runRef.isRunning) {
+    stopSimulationLoop();
+  }
 
   cyRef.instance.edges().removeClass('probing');
   refreshDisplay();
   $('progressBar').style.width = '100%';
-  $('runBtn').textContent = 'RUN SIMULATION';
+  $('runBtn').textContent = '▶ RUN SIMULATION';
 
   const survivors = s.agents.filter(a => a.alive && !a.byzantine).length;
   if (success) {
@@ -554,8 +622,10 @@ export function renderAgentsOnGraph() {
     const goodCount = agentsHere.filter(a => !a.byzantine).length;
     const byzCount  = agentsHere.filter(a =>  a.byzantine).length;
     let label = `${nid}`;
-    if (goodCount > 0) label += `\nG${goodCount}`;
-    if (byzCount  > 0) label += `\nB${byzCount}`;
+    if (goodCount > 0) label += `
+G${goodCount}`;
+    if (byzCount  > 0) label += `
+B${byzCount}`;
     node.data('label', label);
   });
 
@@ -599,8 +669,9 @@ export function renderAgentsOnGraph() {
 }
 
 export function resetSimulation() {
-  clearInterval(runRef.intervalId);
-  runRef.intervalId = null;
+  if (runRef.isRunning) {
+    stopSimulationLoop();
+  }
   setSimState(null);
   if (cyRef.instance) {
     cyRef.instance.destroy();
@@ -610,10 +681,10 @@ export function resetSimulation() {
   $('edgeTable').innerHTML = '';
   $('agentList').innerHTML = '';
   $('agentLayer').innerHTML = '';
-  ['sRound','sAlive','sLost','sByzFound','sEdgeSafe','sEdgeDanger'].forEach(id => setStat(id, '-'));
+  ['sRound','sMoves','sAlive','sLost','sByzFound','sEdgeSafe','sEdgeDanger'].forEach(id => setStat(id, '-'));
   $('progressBar').style.width = '0%';
   $('runBtn').disabled  = true;
-  $('runBtn').textContent = 'RUN SIMULATION';
+  $('runBtn').textContent = '▶ RUN SIMULATION';
   $('stepBtn').disabled = true;
   $('overlay').className = '';
 }

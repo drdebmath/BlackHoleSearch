@@ -1,13 +1,18 @@
 // Entry point: wires up DOM events and starts the simulator.
 
-import { cyRef, runRef } from './state.js';
-import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph } from './simulation.js';
-import { $, updateFormula, closeOverlay, switchTab } from './ui.js';
+import { cyRef, runRef, simState } from './state.js';
+import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph, manualSpoofEdge } from './simulation.js';
+import { $, updateFormula, closeOverlay, switchTab, logAdd } from './ui.js';
+import { toggleSimulationLoop } from './simulation_loop.js';
 
 const nNodes  = $('nNodes');
 const fFault  = $('fFault');
 const advType  = $('adversaryType');
 const bhProbEl = $('bhProb');
+const confirmationsEl = $('confirmations');
+const manualTriggerBtn = $('manualTriggerBtn');
+const spoofSafeBtn = $('spoofSafeBtn');
+const spoofDangerBtn = $('spoofDangerBtn');
 const runBtn  = $('runBtn');
 const panelToggle = $('panelToggle');
 const panelStoreKey = 'bhs-panels-collapsed';
@@ -68,24 +73,34 @@ $('commModel').onchange = updateFormula;
 if (advType) advType.onchange = () => {};
 if (bhProbEl) {
   bhProbEl.oninput = () => { $('bhProbVal').textContent = bhProbEl.value + '%'; };
-  // initialize display
   $('bhProbVal').textContent = bhProbEl.value + '%';
 }
+if (confirmationsEl) {
+    confirmationsEl.oninput = () => { $('confirmVal').textContent = confirmationsEl.value; };
+    $('confirmVal').textContent = confirmationsEl.value;
+}
+if (manualTriggerBtn) {
+    manualTriggerBtn.onclick = () => {
+        if (simState && simState.bhNode) {
+            simState.manualBHTrigger = true;
+            logAdd(simState.round, 'system', 'Manual override: BBH will be ACTIVE next round.');
+        }
+    };
+}
+if(spoofSafeBtn) {
+    spoofSafeBtn.onclick = () => manualSpoofEdge('safe', 'dangerous');
+}
+if(spoofDangerBtn) {
+    spoofDangerBtn.onclick = () => manualSpoofEdge('dangerous', 'safe');
+}
+
 
 $('buildBtn').onclick = buildGraph;
 $('resetBtn').onclick = resetSimulation;
 $('stepBtn').onclick  = stepSimulation;
 
 runBtn.onclick = () => {
-  if (runRef.intervalId) {
-    clearInterval(runRef.intervalId);
-    runRef.intervalId = null;
-    runBtn.textContent = '▶ RUN SIMULATION';
-  } else {
-    const speed = +$('speedSel').value;
-    runRef.intervalId = setInterval(stepSimulation, speed);
-    runBtn.textContent = '⏸ PAUSE';
-  }
+  toggleSimulationLoop();
 };
 
 $('overlayCloseBtn').addEventListener('click', closeOverlay);

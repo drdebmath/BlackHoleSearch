@@ -3,7 +3,7 @@
 // so modules can swap it out on rebuild without losing references.
 
 export const cyRef = { instance: null };
-export const runRef = { intervalId: null };
+export const runRef = { isRunning: false, timeoutId: null };
 export let simState = null;
 
 export function setSimState(next) {
