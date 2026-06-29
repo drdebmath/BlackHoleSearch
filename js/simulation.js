@@ -334,12 +334,15 @@ function prepareProbeOperation(s, step) {
     missing: new Set(),
     limit: Math.min(2 * s.f + 1, candidates.length),
   };
-  const scoutGroup = candidates.slice(0, threshold);
-  const actions = scoutGroup.flatMap(agent => buildProbeActionsForAgent(s, agent, from, to, probe));
 
-  logAdd(s.round, 'system', `CCP starts on (${from}->${to}): initial scout group A${scoutGroup.map(a => a.id).join(', A')}.`);
+  const op = { step, actions: [], index: 0, probe };
+  const outcome = scheduleSoloProbe(op);
+  if (outcome === 'failed') {
+    return { step, actions: [{ type: 'noop' }], index: 0, failed: true };
+  }
 
-  return { step, actions, index: 0, probe };
+  logAdd(s.round, 'system', `CCP starts on (${from}->${to}) with a solo probe loop; the edge will only be classified once ${threshold} distinct outcomes are observed.`);
+  return op;
 }
 
 function agentsAvailableForProbe(s, nodeId) {
@@ -431,7 +434,7 @@ function scheduleSoloProbe(op) {
   op.probe.phase = 'solo';
   op.actions = buildProbeActionsForAgent(s, nextAgent, from, to, op.probe);
   op.index = 0;
-  logAdd(s.round, 'system', `Solo CCP probe: A${nextAgent.id} tests (${from}->${to}).`);
+  logAdd(s.round, 'system', `Solo CCP probe: A${nextAgent.id} tests (${from}->${to}) and immediately returns.`);
   return 'continue';
 }
 
