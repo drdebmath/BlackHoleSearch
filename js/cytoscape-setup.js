@@ -12,11 +12,9 @@ const STYLE = [
       'label': 'data(label)',
       'color': '#c8d6e5',
       'font-size': 10,
-      'font-family': 'Share Tech Mono, monospace',
+      'font-family': 'Share Tech Mono',
       'text-valign': 'center',
-      'text-halign': 'center',
-      'white-space': 'pre',
-      'width': 36, 'height': 36,
+      'width': 32, 'height': 32,
     },
   },
   {
@@ -60,6 +58,9 @@ const STYLE = [
       'label': '☠ BH',
       'font-size': 11,
       'font-weight': 'bold',
+      'box-shadow-blur': 20,
+      'box-shadow-color': '#ff3d5a',
+      'box-shadow-opacity': 0.8,
     },
   },
   {
@@ -67,6 +68,9 @@ const STYLE = [
     style: {
       'border-color': '#00e5ff',
       'border-width': 3,
+      'box-shadow-blur': 15,
+      'box-shadow-color': '#00e5ff',
+      'box-shadow-opacity': 0.6,
     },
   },
   {
@@ -78,15 +82,13 @@ const STYLE = [
       'label': '',
       'font-size': 9,
       'color': '#4a5568',
-      'font-family': 'Share Tech Mono, monospace',
+      'font-family': 'Share Tech Mono',
       'text-rotation': 'autorotate',
     },
   },
   { selector: 'edge.safe',      style: { 'line-color': '#00e676', 'width': 3, 'opacity': 0.7 } },
   { selector: 'edge.dangerous', style: { 'line-color': '#ff3d5a', 'width': 3, 'line-style': 'dashed' } },
   { selector: 'edge.probing',   style: { 'line-color': '#ffb700', 'width': 3, 'line-style': 'dashed' } },
-  // Probe-phase highlight per individual agent sub-step
-  { selector: 'edge.ccp-active', style: { 'line-color': '#c850f0', 'width': 4, 'line-style': 'dashed' } },
 ];
 
 export function initCy(nodes, edges) {
@@ -112,35 +114,15 @@ function showTooltip(evt) {
   const nid = node.id();
   const tip = document.getElementById('tooltip');
   const pos = evt.renderedPosition;
-  const nodeIdx = +nid.slice(1);
   const agentsHere = simState.agents.filter(a => `n${a.pos}` === nid);
   const here = node.hasClass('blackhole') || node.hasClass('revealed')
     ? '☠ BLACK HOLE'
-    : node.hasClass('safe') ? '✓ SAFE' : '? Unexplored';
-
+    : node.hasClass('safe') ? '✓ SAFE' : 'Unexplored';
   const agentList = agentsHere.length > 0
-    ? agentsHere.map(a => `A${a.id}${a.byzantine ? ' [BYZ]' : ''} (${a.alive ? 'alive' : 'dead'})`).join('<br>')
+    ? agentsHere.map(a => `A${a.id}${a.byzantine ? ' [BYZ]' : ''}`).join(', ')
     : 'none';
-
-  // Whiteboard memory for this node
-  let wbHtml = '';
-  if (simState.comm === 'whiteboard' && simState.whiteboard[nodeIdx]) {
-    const wb = simState.whiteboard[nodeIdx];
-    const entries = wb.map(e => `<span style="color:#c850f0">${e}</span>`).join('<br>');
-    wbHtml = `<hr style="border-color:#1e2530;margin:4px 0">📋 WB:<br>${entries}`;
-  }
-
-  // Returns per edge for this node
-  let retHtml = '';
-  const edgeReturns = Object.entries(simState.edgeReturns || {})
-    .filter(([k]) => k.startsWith(`${nodeIdx}-`) || k.endsWith(`-${nodeIdx}`));
-  if (edgeReturns.length) {
-    retHtml = `<hr style="border-color:#1e2530;margin:4px 0">Returns:<br>` +
-      edgeReturns.map(([k, v]) => `${k}: <span style="color:#00e676">${v}/${simState.f + 1}</span>`).join('<br>');
-  }
-
-  tip.innerHTML = `<b>${nid}</b> ${here}<br>Agents here:<br>${agentList}${wbHtml}${retHtml}`;
-  tip.style.left = (pos.x + 18) + 'px';
-  tip.style.top  = (pos.y - 24) + 'px';
+  tip.innerHTML = `<b>${nid}</b><br>Agents: ${agentList}<br>${here}`;
+  tip.style.left = (pos.x + 16) + 'px';
+  tip.style.top  = (pos.y - 20) + 'px';
   tip.style.display = 'block';
 }

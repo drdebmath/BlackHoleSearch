@@ -40,6 +40,13 @@ black hole is unambiguously identified at the end of the exploration.
 - **Theoretical bounds** displayed as you tune the parameters — the team size
   `k`, time complexity, and algorithm name update in real time.
 
+### Byzantine strategy
+
+| Mode | Meaning |
+|---|---|
+| **Adversarial** | Byzantine agents can join any CCP probe, always survive, and always report a return (whether the port is actually safe or dangerous), trying to stall classification and mislead the team. |
+| **Passive** | Byzantine agents never volunteer for a probe, so they never get a chance to lie — but they also never get caught. |
+
 ### Communication models
 
 | Model | Meaning |
@@ -66,39 +73,50 @@ theoretical lower bound on the number of agents `k`:
 | Unknown + Local | `(f+1)(Δ+1) + 3f + 1` | `O(m·n + f)` | `DFS + CCP + MAP` |
 
 Here `n` is the number of nodes, `m` the number of edges, `Δ` the max degree,
-and `f` the number of Byzantine agents. **CCP** = *Cascading Cautious Probe*,
+and `f` the number of Byzantine agents. **CCP** = *Cautious Cyclic Probing*,
 a probe-and-cross-check primitive used to test a candidate edge without losing
 more than `f+1` honest agents.
 
-### CCP terminology
-
-| Concept | Meaning |
-|---|---|
-| **Faulty agents** | Up to `f` Byzantine agents can behave arbitrarily and are immune to the black hole. |
-| **Checking a node** | CCP sends a probe group of up to `2f + 1` agents to an unexplored port. |
-| **Safe node threshold** | A port is safe if `f + 1` different agents return from it. |
-| **Black hole threshold** | A port is dangerous if at least `f + 1` different agents do not return from it. |
-| **Algorithm pathing** | Agents use a Depth-First Search (DFS) strategy, exploring each edge systematically. |
-
 ---
 
-## How It Works (Under the Hood)
+## How it works (under the hood)
 
-The simulator uses a traversal plan (DFS) to visit nodes and probes each unknown edge using the **Cascading Cautious Probe (CCP)** protocol.
+The simulator runs a **real Cascading Cautious Probe (CCP)** per unexplored
+port, matching Algorithm 1 in the paper:
 
-1.  **Traversal Plan**: A DFS-based plan is computed to ensure all nodes (known map) or edges (unknown map) are eventually visited.
-2.  **Probing an Edge**: To test an unknown edge `(u, v)`, the simulation executes the CCP protocol:
-    -   **Initial Wave**: A group of `f+1` agents are sent from `u` to `v`.
-    -   **Evaluation**: In the next round, the results are checked:
-        -   If all `f+1` agents return, the edge is certified **SAFE**.
-        -   If `f+1` agents are lost (fail to return), the edge is certified **DANGEROUS**, and the black hole is located at `v`. Any agent that *did* return from this edge is immediately blacklisted as Byzantine.
-    -   **Cascading Wave**: If the results are mixed (some return, some are lost), it implies Byzantine interference. The simulation enters a cascading phase, sending remaining honest agents one-by-one until a consensus of `f+1` returns or `f+1` losses is reached.
-3.  **Agent Logic**:
-    -   **Honest Agents** are destroyed if they enter the black hole.
-    -   **Byzantine Agents** are immune to the black hole. They can enter and return safely, allowing them to lie and report a dangerous edge as safe.
-4.  **Completion**: The simulation ends when the black hole is located (for known maps) or when all edges have been classified (for unknown maps). The mission fails if all honest agents are eliminated before the goal is met.
+1. A physical **DFS** walk is precomputed from the homebase, including
+   backtracking moves.
+2. To classify an unexplored port `p`, a probe wave is sent through it:
+   the **first wave is `f+1-|B|` agents** (`B` = already-identified
+   Byzantine agents), sent in a single round; every wave after that is
+   **one agent at a time**.
+3. The round after a wave is sent, the simulator checks who came back:
+   - `R` = agents that returned through `p` (evidence the port is *safe*).
+   - `D` = agents that did **not** return through `p` (evidence the port is
+     *dangerous*).
+   - The instant either `|R|` or `|D|` reaches `f+1-|B|`, the port is
+     classified — there is **no need for all `2f+1` agents to be exhausted**;
+     reaching the threshold either way is conclusive proof on its own.
+4. If nobody misbehaves, this takes exactly **2 rounds**. Every Byzantine
+   agent that gets folded into the probe and behaves adversarially adds
+   **2 more rounds** to the cascade (Lemma 2), with an absolute worst case of
+   **`2f+1` agents and `2f+2` rounds** to resolve a single port (Lemma 1).
+5. A good agent that walks into the real black hole never returns and is
+   removed from the simulation. A Byzantine agent **never dies** — under the
+   **Byzantine Strategy** setting:
+   - *Adversarial*: it can join any probe, always returns regardless of the
+     true status of the node, and is exposed as Byzantine the moment its
+     return behaviour contradicts the port's final classification.
+   - *Passive*: it never volunteers for a probe at all, so it can't stall a
+     classification, but it also can never be caught by CCP.
+6. The run finishes when the BH is located (known-map) or when every edge has
+   been classified (unknown-map). The mission fails if every honest agent is
+   consumed before that happens.
 
-> ⚠️ This is a **teaching and visualization prototype**. While it implements the core logic of the CCP protocol, it abstracts away certain network-level details like message authentication and synchronous rounds for clarity.
+> ⚠️ This is a **teaching / visualisation prototype**, not a verified
+> implementation of any published protocol, but the CCP step now follows
+> Algorithm 1's send/await/cascade structure and threshold logic directly,
+> rather than abstracting it into a single coin-flip.
 
 ---
 

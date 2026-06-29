@@ -1,22 +1,16 @@
 // Entry point: wires up DOM events and starts the simulator.
 
 import { cyRef, runRef } from './state.js';
-import {
-  buildGraph, stepSimulation, resetSimulation,
-  renderAgentsOnGraph, replayBack, replayForward,
-} from './simulation.js';
+import { buildGraph, stepSimulation, resetSimulation, renderAgentsOnGraph } from './simulation.js';
 import { $, updateFormula, closeOverlay, switchTab } from './ui.js';
 
-const nNodes      = $('nNodes');
-const fFault      = $('fFault');
-const runBtn      = $('runBtn');
+const nNodes  = $('nNodes');
+const fFault  = $('fFault');
+const runBtn  = $('runBtn');
 const panelToggle = $('panelToggle');
-
-const panelStoreKey       = 'bhs-panels-collapsed';
+const panelStoreKey = 'bhs-panels-collapsed';
 const mobilePanelStoreKey = 'bhs-mobile-panels-collapsed';
-const mobilePanelQuery    = window.matchMedia('(max-width: 900px)');
-
-// ── Viewport / Panel Toggle ──────────────────────────────────────────────────
+const mobilePanelQuery = window.matchMedia('(max-width: 900px)');
 
 function refreshGraphViewport() {
   window.setTimeout(() => {
@@ -63,17 +57,12 @@ if (panelToggle) {
     mobilePanelQuery.addListener(syncPanelStateForViewport);
   }
 }
-
 window.addEventListener('resize', refreshGraphViewport);
-
-// ── Sliders ──────────────────────────────────────────────────────────────────
 
 nNodes.oninput = () => { $('nVal').textContent = nNodes.value; updateFormula(); };
 fFault.oninput = () => { $('fVal').textContent = fFault.value; updateFormula(); };
 $('topoKnow').onchange = updateFormula;
 $('commModel').onchange = updateFormula;
-
-// ── Main Buttons ─────────────────────────────────────────────────────────────
 
 $('buildBtn').onclick = buildGraph;
 $('resetBtn').onclick = resetSimulation;
@@ -91,21 +80,10 @@ runBtn.onclick = () => {
   }
 };
 
-// ── Replay Buttons ────────────────────────────────────────────────────────────
-
-const replayBackBtn = $('replayBack');
-const replayFwdBtn  = $('replayFwd');
-if (replayBackBtn) replayBackBtn.addEventListener('click', replayBack);
-if (replayFwdBtn)  replayFwdBtn.addEventListener('click', replayForward);
-
-// ── Overlay + Tabs ────────────────────────────────────────────────────────────
-
 $('overlayCloseBtn').addEventListener('click', closeOverlay);
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => switchTab(tab.dataset.tab));
 });
-
-// ── Init ─────────────────────────────────────────────────────────────────────
 
 updateFormula();
 buildGraph();
