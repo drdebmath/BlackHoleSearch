@@ -66,9 +66,19 @@ theoretical lower bound on the number of agents `k`:
 | Unknown + Local | `(f+1)(Δ+1) + 3f + 1` | `O(m·n + f)` | `DFS + CCP + MAP` |
 
 Here `n` is the number of nodes, `m` the number of edges, `Δ` the max degree,
-and `f` the number of Byzantine agents. **CCP** = *Cautious Cyclic Probing*,
+and `f` the number of Byzantine agents. **CCP** = *Cascading Cautious Probe*,
 a probe-and-cross-check primitive used to test a candidate edge without losing
 more than `f+1` honest agents.
+
+### CCP terminology
+
+| Concept | Meaning |
+|---|---|
+| **Faulty agents** | Up to `f` Byzantine agents can behave arbitrarily and are immune to the black hole. |
+| **Checking a node** | CCP sends a probe group of up to `2f + 1` agents to an unexplored port. |
+| **Safe node threshold** | A port is safe if `f + 1` different agents return from it. |
+| **Black hole threshold** | A port is dangerous if at least `f + 1` different agents do not return from it. |
+| **Algorithm pathing** | Agents use a Depth-First Search (DFS) strategy, exploring each edge systematically. |
 
 ---
 
