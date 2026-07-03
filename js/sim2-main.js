@@ -373,7 +373,8 @@ function buildSim2() {
   state.log = [];
 
   // Build nodes/edges via shared generator and initialize cy2 with the same style/layout as sim1
-  const { nodes, edges } = generateGraph('random', state.nodeCount);
+  const topo = q('sim2TopoSelect') ? q('sim2TopoSelect').value : 'random';
+  const { nodes, edges } = generateGraph(topo, state.nodeCount);
   initCy2(nodes, edges);
   if (cy2) {
     const homeId = `n0`;
@@ -452,6 +453,11 @@ function installEventHandlers() {
     q('sim2PathSizeVal').textContent = q('sim2PathSize').value;
   });
   q('sim2PathSize').addEventListener('change', buildSim2);
+  if (q('sim2TopoSelect')) {
+    q('sim2TopoSelect').addEventListener('change', () => {
+      addLog(`Topology set to ${q('sim2TopoSelect').value}.`, 'info');
+    });
+  }
   q('sim2AdversaryMode').addEventListener('change', () => addLog(`Adversary mode set to ${q('sim2AdversaryMode').value}.`, 'info'));
 }
 

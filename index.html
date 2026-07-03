@@ -214,6 +214,17 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
           <span class="val-display" id="sim2PathSizeVal">7</span>
         </label>
         <label>
+          GRAPH TOPOLOGY
+          <select id="sim2TopoSelect">
+            <option value="random">Random Connected Graph</option>
+            <option value="ring">Ring</option>
+            <option value="complete">Complete Graph</option>
+            <option value="grid">Grid</option>
+            <option value="tree">Balanced Tree</option>
+            <option value="star">Star</option>
+          </select>
+        </label>
+        <label>
           ADVERSARY MODE
           <select id="sim2AdversaryMode">
             <option value="random">Random activate</option>
@@ -279,6 +290,6 @@ themeToggle.onclick = () => {
 };
 syncThemeToggle();
 </script>
-<footer class="footer-credit">Developed by Vansh Gupta v4.8</footer>
+<footer class="footer-credit">Developed by Vansh Gupta v5.2</footer>
 </body>
 </html>
