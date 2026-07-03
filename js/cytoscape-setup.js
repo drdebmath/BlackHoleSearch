@@ -2,7 +2,7 @@
 
 import { cyRef, simState } from './state.js';
 
-const STYLE = [
+export const STYLE = [
   {
     selector: 'node',
     style: {

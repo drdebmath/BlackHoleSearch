@@ -1,4 +1,43 @@
+import { generateGraph } from './graph-generation.js';
+import { STYLE } from './cytoscape-setup.js';
+
 const q = id => document.getElementById(id);
+let cy2 = null;
+
+// Use shared STYLE from sim1 for visual parity
+
+function initCy2(nodes, edges) {
+  if (!q('cy2')) return;
+  if (cy2) cy2.destroy();
+  cy2 = cytoscape({
+    container: q('cy2'),
+    elements: { nodes, edges },
+    style: STYLE,
+    layout: { name: 'preset', padding: 40, animate: false },
+  });
+  // expose for runtime inspection and debugging
+  try { window.cy2 = cy2; } catch (e) { /* ignore */ }
+  if (q('cy2')) {
+    q('cy2').dataset.nodeCount = String(nodes.length || 0);
+    q('cy2').dataset.edgeCount = String(edges.length || 0);
+  }
+  cy2.on('mouseover', 'node', showTooltip2);
+  cy2.on('mouseout', 'node', () => { q('tooltip2').style.display = 'none'; });
+}
+
+function showTooltip2(evt) {
+  const node = evt.target;
+  const index = Number(node.id().slice(1));
+  const tooltip = q('tooltip2');
+  const pos = node.renderedPosition();
+  const agentsHere = state.agents.filter(agent => agent.alive && agent.pos === index);
+  const status = index === 0 ? 'Home node' : index === state.bhIndex ? 'Byzantine Black Hole' : (state.safeBoundary !== null && index <= state.safeBoundary ? 'Safe node' : 'Path node');
+  const agentList = agentsHere.length ? agentsHere.map(agent => agent.id).join(', ') : 'none';
+  tooltip.innerHTML = `<b>n${index}</b><br>${status}<br>Agents: ${agentList}`;
+  tooltip.style.left = `${pos.x + 18}px`;
+  tooltip.style.top = `${pos.y - 34}px`;
+  tooltip.style.display = 'block';
+}
 
 const explorerPatterns = [
   [1, 0, 0, 0],
@@ -48,22 +87,22 @@ function makeAgents() {
 }
 
 function buildPathElements() {
-  const pathRoot = q('sim2Path');
-  pathRoot.innerHTML = '';
+  const nodes = [];
+  const edges = [];
+  const spacing = 120;
+  const centerOffset = (state.nodeCount - 1) * spacing / 2;
 
   for (let index = 0; index < state.nodeCount; index += 1) {
-    const node = document.createElement('div');
-    node.className = 'sim2-node' + (index === 0 ? ' home' : '');
-    node.dataset.index = String(index);
-    node.innerHTML = `<div class="sim2-node-label">${index}</div><div class="sim2-agent-stack"></div>`;
-    pathRoot.appendChild(node);
-
+    nodes.push({
+      data: { id: `n${index}`, label: `${index}` },
+      position: { x: index * spacing - centerOffset, y: 0 },
+    });
     if (index < state.nodeCount - 1) {
-      const edge = document.createElement('div');
-      edge.className = 'sim2-edge';
-      pathRoot.appendChild(edge);
+      edges.push({ data: { id: `e${index}-${index + 1}`, source: `n${index}`, target: `n${index + 1}` } });
     }
   }
+
+  initCy2(nodes, edges);
 }
 
 function addLog(text, style = 'info') {
@@ -97,29 +136,23 @@ function getAliveCounts() {
 }
 
 function renderSim2() {
-  const pathNodes = Array.from(q('sim2Path').querySelectorAll('.sim2-node'));
-  pathNodes.forEach(nodeEl => {
-    const index = Number(nodeEl.dataset.index);
-    const stack = nodeEl.querySelector('.sim2-agent-stack');
-    stack.innerHTML = '';
-    nodeEl.classList.toggle('bh', state.bhRevealed && index === state.bhIndex);
-    nodeEl.classList.toggle('safe', state.safeBoundary !== null && index <= state.safeBoundary);
+  if (cy2) {
+    cy2.nodes().forEach(node => {
+      const index = Number(node.id().slice(1));
+      node.removeClass('home bh safe');
+      if (index === 0) node.addClass('home');
+      if (index === state.bhIndex && state.bhRevealed) node.addClass('bh');
+      if (state.safeBoundary !== null && index <= state.safeBoundary) node.addClass('safe');
 
-    state.agents.filter(agent => agent.alive && agent.pos === index).forEach(agent => {
-      const agentPill = document.createElement('div');
-      agentPill.className = `sim2-agent-pill ${agent.role === 'waiter' ? 'waiter' : 'explorer'}`;
-      agentPill.textContent = agent.id;
-      stack.appendChild(agentPill);
+      const agentsHere = state.agents.filter(agent => agent.alive && agent.pos === index);
+      const label = agentsHere.length
+        ? `${index}\n${agentsHere.map(agent => agent.id).join(',')}`
+        : `${index}`;
+      node.data('label', label);
     });
-
-    if (index === state.bhIndex && state.bhRevealed) {
-      nodeEl.title = 'Byzantine Black Hole';
-    } else if (index === 0) {
-      nodeEl.title = 'Home node';
-    } else {
-      nodeEl.title = 'Path node';
-    }
-  });
+    cy2.resize();
+    cy2.fit();
+  }
 
   q('sim2Round').textContent = String(state.round);
   const counts = getAliveCounts();
@@ -315,8 +348,7 @@ function resetSim2() {
   state.bhLocated = false;
   state.homeExploreStarted = false;
   state.log = [];
-  buildPathElements();
-  renderSim2();
+  buildSim2();
 }
 
 function buildSim2() {
@@ -340,7 +372,18 @@ function buildSim2() {
   state.homeExploreStarted = false;
   state.log = [];
 
-  buildPathElements();
+  // Build nodes/edges via shared generator and initialize cy2 with the same style/layout as sim1
+  const { nodes, edges } = generateGraph('random', state.nodeCount);
+  initCy2(nodes, edges);
+  if (cy2) {
+    const homeId = `n0`;
+    const bhId = `n${state.bhIndex}`;
+    const nHome = cy2.getElementById(homeId);
+    const nBh = cy2.getElementById(bhId);
+    if (nHome && nHome.length) nHome.addClass('home');
+    if (nBh && nBh.length) nBh.addClass('bh');
+  }
+
   addLog('Byzantine BBH home exploration simulation initialized.', 'info');
   renderSim2();
 }
@@ -365,16 +408,10 @@ function toggleRunSim2() {
     }
   }, interval);
   updateRunButton();
-  addLog('Simulation running.', 'safe');
-  renderSim2();
-}
 
-function updateSimulationIndicator(value) {
-  const indicator = q('simIndicator');
-  if (!indicator) return;
-  indicator.textContent = value === 'sim2'
-    ? 'Active: Byzantine BBH Home Exploration'
-    : 'Active: Classical Black Hole Search';
+  // Start running; UI will update on the next tick via renderSim2
+  addLog('Simulation started.', 'info');
+  renderSim2();
 }
 
 function switchSimulation(value) {
@@ -384,13 +421,20 @@ function switchSimulation(value) {
   if (value === 'sim2') {
     sim1.style.display = 'none';
     sim2.style.display = 'flex';
-    q('sim2Select').value = 'sim2';
   } else {
-    sim1.style.display = 'block';
+    sim1.style.display = '';
     sim2.style.display = 'none';
-    q('sim2Select').value = 'sim1';
   }
+  q('sim2Select').value = value === 'sim2' ? 'sim2' : 'sim1';
   updateSimulationIndicator(value);
+}
+
+function updateSimulationIndicator(value) {
+  const indicator = q('simIndicator');
+  if (!indicator) return;
+  indicator.textContent = value === 'sim2'
+    ? 'Active: Byzantine BBH Home Exploration'
+    : 'Active: Classical Black Hole Search';
 }
 
 function installEventHandlers() {
@@ -414,7 +458,7 @@ function installEventHandlers() {
 window.switchSimulation = switchSimulation;
 
 (function initializeSim2() {
-  if (!q('sim2Path')) return;
+  if (!q('cy2')) return;
   installEventHandlers();
   buildSim2();
   updateSimulationIndicator(q('sim2Select').value || 'sim1');

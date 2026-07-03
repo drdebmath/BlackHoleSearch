@@ -201,8 +201,9 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
 
   </div>
 </div>
+</div>
 
-<div id="sim2-container" style="display:none;">
+<div id="sim2-container">
   <div class="sim2-main">
     <div class="sim2-controls">
       <div class="section-title">// BYZANTINE BBH SIMULATION</div>
@@ -249,8 +250,10 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
         </div>
         <div class="sim2-phase">Phase: <span id="sim2Phase">Explorer formation</span></div>
       </div>
-      <div class="sim2-path-area">
-        <div id="sim2Path" class="sim2-path"></div>
+      <div class="sim2-graph-area">
+        <div id="cy2"></div>
+        <div id="agentLayer2" aria-hidden="true"></div>
+        <div id="tooltip2" class="sim2-tooltip"></div>
       </div>
       <div class="sim2-log-panel">
         <div class="section-title">// EVENT LOG</div>
@@ -261,7 +264,7 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
 </div>
 
 <script type="module" src="js/main.js"></script>
-<script src="js/sim2-main.js"></script>
+<script type="module" src="js/sim2-main.js"></script>
 <script>
 const themeToggle = document.getElementById('themeToggle');
 function syncThemeToggle() {
