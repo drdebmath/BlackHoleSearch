@@ -1,6 +1,8 @@
 import { generateGraph } from './graph-generation.js';
 import { STYLE } from './cytoscape-setup.js';
 import { renderAgentsLayer, getCyEdge, highlightEdge, markCurrentNode } from './sim-shared.js';
+import { cyRef, setSimState } from './state.js';
+import { setStat, logAdd, logClear, updateAgentChips, updateEdgeTable } from './ui.js';
 
 const q = id => document.getElementById(id);
 let cy2 = null;
@@ -25,6 +27,8 @@ function initCy2(nodes, edges) {
     q('cy2').dataset.nodeCount = String(nodes.length || 0);
     q('cy2').dataset.edgeCount = String(edges.length || 0);
   }
+  // set shared cyRef.instance so main UI helpers operate on cy2 when sim2 is active
+  try { cyRef.instance = cy2; } catch (e) { /* ignore */ }
   cy2.on('mouseover', 'node', showTooltip2);
   cy2.on('mouseout', 'node', () => { q('tooltip2').style.display = 'none'; });
   // keep agent layer in sync on pan/zoom/resize and when nodes move
@@ -115,6 +119,18 @@ function buildPathElements() {
 function addLog(text, style = 'info') {
   state.log.unshift({ round: state.round, text, style });
   if (state.log.length > 18) state.log.pop();
+  try {
+    const root = document.getElementById('log');
+    if (root) {
+      const entry = document.createElement('div');
+      entry.className = 'log-entry';
+      entry.innerHTML = `<span class="log-round">R${state.round}</span><span class="log-msg ${style}">${text}</span>`;
+      root.appendChild(entry);
+      root.scrollTop = root.scrollHeight;
+    }
+  } catch (e) {
+    // ignore UI errors
+  }
 }
 
 function getAgent(agentId) {
@@ -183,6 +199,27 @@ function renderSim2() {
   }
 
   updateRunButton();
+
+  // Sync main UI panel and log to mirror sim2 state for parity with sim1
+  try {
+    setStat('sRound', String(state.round));
+    const counts = getAliveCounts();
+    setStat('sAlive', String(counts.total));
+    setStat('sLost', String(counts.dead));
+    setStat('sByzFound', '0');
+    setStat('sEdgeSafe', state.safeBoundary === null ? '0' : String(state.safeBoundary));
+    setStat('sEdgeDanger', '0');
+
+    // Update main log to match sim2 log
+    logClear();
+    (state.log || []).slice().reverse().forEach(entry => logAdd(entry.round || 0, entry.style || 'info', entry.text));
+
+    // Update agent chips and edge table using shared UI helpers
+    updateAgentChips();
+    updateEdgeTable();
+  } catch (e) {
+    // ignore UI sync errors to avoid breaking simulation
+  }
 }
 
 // Use shared helpers from sim-shared.js: getCyEdge, highlightEdge, markCurrentNode, renderAgentsLayer
@@ -229,7 +266,7 @@ function applyFormationStep() {
     if (!agent || !agent.alive) return;
     const prev = agent.pos;
     agent.pos = pattern[index];
-    if (prev !== agent.pos) highlightEdge2(prev, agent.pos, 'release');
+    if (prev !== agent.pos) highlightEdge(cy2, prev, agent.pos, 'release');
   });
   const movement = pattern.map((pos, idx) => `${['L', 'I1', 'I2', 'F'][idx]}→${pos}`).join(', ');
   addLog(`Explorers advance: ${movement}.`, 'info');
@@ -274,7 +311,7 @@ function stepWaiterSearch() {
 
   const prev = mover.pos;
   mover.pos = targetIndex;
-  if (prev !== mover.pos) highlightEdge2(prev, mover.pos, 'probing');
+  if (prev !== mover.pos) highlightEdge(cy2, prev, mover.pos, 'probing');
   addLog(`${mover.id} cautiously advances to node ${targetIndex} while partner watches.`, 'info');
   state.probeStep.nextIndex += 1;
   state.probeStep.nextMover = mover.id === 'F1' ? 'F2' : 'F1';
@@ -303,12 +340,12 @@ function stepHomeExploration() {
     const prev1 = aliveWaiters[1].pos;
     aliveWaiters[0].pos = stepIndex;
     aliveWaiters[1].pos = state.safeBoundary - stepIndex;
-    if (prev0 !== aliveWaiters[0].pos) highlightEdge2(prev0, aliveWaiters[0].pos, 'release');
-    if (prev1 !== aliveWaiters[1].pos) highlightEdge2(prev1, aliveWaiters[1].pos, 'release');
+    if (prev0 !== aliveWaiters[0].pos) highlightEdge(cy2, prev0, aliveWaiters[0].pos, 'release');
+    if (prev1 !== aliveWaiters[1].pos) highlightEdge(cy2, prev1, aliveWaiters[1].pos, 'release');
   } else {
     const prev0 = aliveWaiters[0].pos;
     aliveWaiters[0].pos = stepIndex;
-    if (prev0 !== aliveWaiters[0].pos) highlightEdge2(prev0, aliveWaiters[0].pos, 'release');
+    if (prev0 !== aliveWaiters[0].pos) highlightEdge(cy2, prev0, aliveWaiters[0].pos, 'release');
   }
 
   state.homeCycle += 1;
@@ -401,6 +438,22 @@ function buildSim2() {
     const nBh = cy2.getElementById(bhId);
     if (nHome && nHome.length) nHome.addClass('homebase');
     if (nBh && nBh.length) nBh.addClass('blackhole');
+    // publish sim2 state to shared simState for UI functions
+    try { setSimState(state); } catch (e) { /* ignore */ }
+    // update main UI components to reflect sim2
+    try {
+      logClear();
+      // main log expects entries in chronological order; sim2.state.log stores latest first
+      (state.log || []).slice().reverse().forEach(entry => logAdd(entry.round || 0, entry.style || 'info', entry.text));
+      updateAgentChips();
+      updateEdgeTable();
+      setStat('sRound', String(state.round));
+      setStat('sAlive', String(getAliveCounts().total));
+      setStat('sLost', String(getAliveCounts().dead));
+      setStat('sByzFound', '0');
+      setStat('sEdgeSafe', state.safeBoundary === null ? '0' : String(state.safeBoundary));
+      setStat('sEdgeDanger', '0');
+    } catch (e) { /* ignore UI sync errors */ }
   }
 
   addLog('Byzantine BBH home exploration simulation initialized.', 'info');
