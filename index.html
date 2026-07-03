@@ -23,6 +23,16 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
     <span class="badge badge-bh">BLACK HOLE</span>
     <span class="badge badge-safe">ICDCS 2025</span>
   </div>
+  <div class="sim-switcher">
+    <label>
+      SELECT SIMULATION
+      <select id="sim2Select" onchange="switchSimulation(this.value)">
+        <option value="sim1">Classical Black Hole Search</option>
+        <option value="sim2">Byzantine BBH Home Exploration</option>
+      </select>
+    </label>
+    <div class="sim-indicator" id="simIndicator">Active: Classical Black Hole Search</div>
+  </div>
   <button class="panel-toggle" id="panelToggle" type="button" aria-controls="simControls simStatus" aria-expanded="true" title="Hide panels">
     <span class="panel-toggle-icon" aria-hidden="true"><span></span><span></span><span></span></span>
     <span class="panel-toggle-label">HIDE PANELS</span>
@@ -30,7 +40,8 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
   <button class="theme-toggle" id="themeToggle" type="button">LIGHT MODE</button>
 </header>
 
-<div class="main">
+<div id="sim1-container">
+  <div class="main">
 
   <!-- LEFT PANEL -->
   <div class="left-panel" id="simControls">
@@ -191,7 +202,66 @@ if (localStorage.getItem('theme') === 'light') document.documentElement.classLis
   </div>
 </div>
 
+<div id="sim2-container" style="display:none;">
+  <div class="sim2-main">
+    <div class="sim2-controls">
+      <div class="section-title">// BYZANTINE BBH SIMULATION</div>
+      <div class="controls">
+        <label>
+          PATH SIZE
+          <input id="sim2PathSize" type="range" min="6" max="10" value="7">
+          <span class="val-display" id="sim2PathSizeVal">7</span>
+        </label>
+        <label>
+          ADVERSARY MODE
+          <select id="sim2AdversaryMode">
+            <option value="random">Random activate</option>
+            <option value="always">Always destroy</option>
+            <option value="never">Never destroy</option>
+          </select>
+        </label>
+        <label>
+          SIMULATION SPEED
+          <select id="sim2SpeedSel">
+            <option value="1000">Slow</option>
+            <option value="600" selected>Normal</option>
+            <option value="250">Fast</option>
+          </select>
+        </label>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="sim2BuildBtn">BUILD</button>
+          <button class="btn btn-warn" id="sim2ResetBtn">RESET</button>
+        </div>
+        <button class="btn btn-primary" id="sim2RunBtn">▶ RUN SIMULATION</button>
+        <button class="btn btn-danger" id="sim2StepBtn">STEP →</button>
+      </div>
+    </div>
+
+    <div class="sim2-viewport">
+      <div class="sim2-status-panel">
+        <div class="sim2-stats-grid">
+          <div><div class="stat-label">ROUND</div><div class="stat-val sv-cyan" id="sim2Round">0</div></div>
+          <div><div class="stat-label">ALIVE</div><div class="stat-val sv-green" id="sim2Alive">6</div></div>
+          <div><div class="stat-label">EXPLORERS</div><div class="stat-val sv-purple" id="sim2Explorers">4</div></div>
+          <div><div class="stat-label">WAITERS</div><div class="stat-val sv-yellow" id="sim2Waiters">2</div></div>
+          <div><div class="stat-label">DEAD</div><div class="stat-val sv-red" id="sim2Dead">0</div></div>
+          <div><div class="stat-label">BOUNDARY</div><div class="stat-val sv-green" id="sim2Boundary">unknown</div></div>
+        </div>
+        <div class="sim2-phase">Phase: <span id="sim2Phase">Explorer formation</span></div>
+      </div>
+      <div class="sim2-path-area">
+        <div id="sim2Path" class="sim2-path"></div>
+      </div>
+      <div class="sim2-log-panel">
+        <div class="section-title">// EVENT LOG</div>
+        <div id="sim2Log" class="sim2-log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script type="module" src="js/main.js"></script>
+<script src="js/sim2-main.js"></script>
 <script>
 const themeToggle = document.getElementById('themeToggle');
 function syncThemeToggle() {
@@ -206,6 +276,6 @@ themeToggle.onclick = () => {
 };
 syncThemeToggle();
 </script>
-<footer class="footer-credit">Developed by Vansh Gupta v4.5</footer>
+<footer class="footer-credit">Developed by Vansh Gupta v4.8</footer>
 </body>
 </html>
