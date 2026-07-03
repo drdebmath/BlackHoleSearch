@@ -1,5 +1,6 @@
 import { generateGraph } from './graph-generation.js';
 import { STYLE } from './cytoscape-setup.js';
+import { renderAgentsLayer, getCyEdge, highlightEdge, markCurrentNode } from './sim-shared.js';
 
 const q = id => document.getElementById(id);
 let cy2 = null;
@@ -9,11 +10,14 @@ let cy2 = null;
 function initCy2(nodes, edges) {
   if (!q('cy2')) return;
   if (cy2) cy2.destroy();
+  const hasPresetPositions = nodes.some(node => node.position);
   cy2 = cytoscape({
     container: q('cy2'),
     elements: { nodes, edges },
     style: STYLE,
-    layout: { name: 'preset', padding: 40, animate: false },
+    layout: hasPresetPositions
+      ? { name: 'preset', padding: 60, fit: true, animate: false }
+      : { name: 'cose', padding: 40, nodeOverlap: 30, animate: false },
   });
   // expose for runtime inspection and debugging
   try { window.cy2 = cy2; } catch (e) { /* ignore */ }
@@ -23,6 +27,9 @@ function initCy2(nodes, edges) {
   }
   cy2.on('mouseover', 'node', showTooltip2);
   cy2.on('mouseout', 'node', () => { q('tooltip2').style.display = 'none'; });
+  // keep agent layer in sync on pan/zoom/resize and when nodes move
+  cy2.on('pan zoom resize layoutstop', () => renderAgentsLayer(cy2, q('agentLayer2'), state.agents, null));
+  cy2.on('position', 'node', () => renderAgentsLayer(cy2, q('agentLayer2'), state.agents, null));
 }
 
 function showTooltip2(evt) {
@@ -139,19 +146,18 @@ function renderSim2() {
   if (cy2) {
     cy2.nodes().forEach(node => {
       const index = Number(node.id().slice(1));
-      node.removeClass('home bh safe');
-      if (index === 0) node.addClass('home');
-      if (index === state.bhIndex && state.bhRevealed) node.addClass('bh');
+      node.removeClass('homebase blackhole safe current');
+      if (index === 0) node.addClass('homebase');
+      if (index === state.bhIndex && state.bhRevealed) node.addClass('blackhole');
       if (state.safeBoundary !== null && index <= state.safeBoundary) node.addClass('safe');
 
       const agentsHere = state.agents.filter(agent => agent.alive && agent.pos === index);
-      const label = agentsHere.length
-        ? `${index}\n${agentsHere.map(agent => agent.id).join(',')}`
-        : `${index}`;
-      node.data('label', label);
+      // label update handled by shared renderer when it runs; keep minimal label here
+      node.data('label', `${index}`);
     });
     cy2.resize();
     cy2.fit();
+    renderAgentsLayer(cy2, q('agentLayer2'), state.agents, null);
   }
 
   q('sim2Round').textContent = String(state.round);
@@ -178,6 +184,8 @@ function renderSim2() {
 
   updateRunButton();
 }
+
+// Use shared helpers from sim-shared.js: getCyEdge, highlightEdge, markCurrentNode, renderAgentsLayer
 
 function updateRunButton() {
   q('sim2RunBtn').textContent = state.intervalId ? '⏸ PAUSE' : '▶ RUN SIMULATION';
@@ -219,7 +227,9 @@ function applyFormationStep() {
   explorerOrder.forEach((id, index) => {
     const agent = getAgent(id);
     if (!agent || !agent.alive) return;
+    const prev = agent.pos;
     agent.pos = pattern[index];
+    if (prev !== agent.pos) highlightEdge2(prev, agent.pos, 'release');
   });
   const movement = pattern.map((pos, idx) => `${['L', 'I1', 'I2', 'F'][idx]}→${pos}`).join(', ');
   addLog(`Explorers advance: ${movement}.`, 'info');
@@ -262,7 +272,9 @@ function stepWaiterSearch() {
     return;
   }
 
+  const prev = mover.pos;
   mover.pos = targetIndex;
+  if (prev !== mover.pos) highlightEdge2(prev, mover.pos, 'probing');
   addLog(`${mover.id} cautiously advances to node ${targetIndex} while partner watches.`, 'info');
   state.probeStep.nextIndex += 1;
   state.probeStep.nextMover = mover.id === 'F1' ? 'F2' : 'F1';
@@ -287,10 +299,16 @@ function stepHomeExploration() {
 
   const stepIndex = state.homeCycle % (state.safeBoundary + 1);
   if (aliveWaiters.length === 2) {
+    const prev0 = aliveWaiters[0].pos;
+    const prev1 = aliveWaiters[1].pos;
     aliveWaiters[0].pos = stepIndex;
     aliveWaiters[1].pos = state.safeBoundary - stepIndex;
+    if (prev0 !== aliveWaiters[0].pos) highlightEdge2(prev0, aliveWaiters[0].pos, 'release');
+    if (prev1 !== aliveWaiters[1].pos) highlightEdge2(prev1, aliveWaiters[1].pos, 'release');
   } else {
+    const prev0 = aliveWaiters[0].pos;
     aliveWaiters[0].pos = stepIndex;
+    if (prev0 !== aliveWaiters[0].pos) highlightEdge2(prev0, aliveWaiters[0].pos, 'release');
   }
 
   state.homeCycle += 1;
@@ -381,8 +399,8 @@ function buildSim2() {
     const bhId = `n${state.bhIndex}`;
     const nHome = cy2.getElementById(homeId);
     const nBh = cy2.getElementById(bhId);
-    if (nHome && nHome.length) nHome.addClass('home');
-    if (nBh && nBh.length) nBh.addClass('bh');
+    if (nHome && nHome.length) nHome.addClass('homebase');
+    if (nBh && nBh.length) nBh.addClass('blackhole');
   }
 
   addLog('Byzantine BBH home exploration simulation initialized.', 'info');
