@@ -41,9 +41,13 @@ export function updateEdgeTable() {
   table.innerHTML = '';
   for (const [key, status] of Object.entries(simState.edgeStatus)) {
     const cls = status === 'safe' ? 'safe' : status === 'dangerous' ? 'danger' : 'unknown';
+    const evidence = simState.edgeEvidence?.[key];
+    const evidenceText = evidence
+      ? `<small>R${evidence.returned.size} / M${evidence.missing.size}</small>`
+      : '';
     const row = document.createElement('div');
     row.className = 'edge-row';
-    row.innerHTML = `<span>${key}</span><span class="status-${cls}">${status.toUpperCase()}</span>`;
+    row.innerHTML = `<span>${key}</span><span class="status-${cls}">${status.toUpperCase()} ${evidenceText}</span>`;
     table.appendChild(row);
   }
 }

@@ -66,7 +66,7 @@ theoretical lower bound on the number of agents `k`:
 | Unknown + Local | `(f+1)(Δ+1) + 3f + 1` | `O(m·n + f)` | `DFS + CCP + MAP` |
 
 Here `n` is the number of nodes, `m` the number of edges, `Δ` the max degree,
-and `f` the number of Byzantine agents. **CCP** = *Cautious Cyclic Probing*,
+and `f` the number of Byzantine agents. **CCP** = *Cascading Cautious Probe*,
 a probe-and-cross-check primitive used to test a candidate edge without losing
 more than `f+1` honest agents.
 
@@ -74,24 +74,56 @@ more than `f+1` honest agents.
 
 ## How it works (under the hood)
 
-The simulator probes one edge per round using a simplified CCP model:
+### 1. Classifying the territory
 
-1. A physical **DFS** walk is precomputed from the homebase, including
-   backtracking moves.
-2. Each round advances one agent by one step along the current DFS/CCP action.
-3. If `v` is the black hole, up to `f + 1` good agents are consumed (this is
-   the worst case for cautious probing under `f` Byzantine faults) and the
-   edge is flagged as *dangerous*.
-4. Otherwise the edge is *safe*, `v` is added to the explored set, and there
-   is a chance that any active Byzantine agent gets *identified* by its
-   inconsistent behaviour during the cross-check.
-5. The run finishes when the BH is located (known-map) or when every edge has
-   been classified (unknown-map). The mission fails if every honest agent is
-   consumed before that happens.
+Every port/edge starts as **unexplored**. During exploration it is promoted to
+one of two terminal states:
 
-> ⚠️ This is a **teaching / visualisation prototype**, not a verified
-> implementation of any published protocol. The CCP step is abstracted into a
-> single coin-flip rather than a full round-based exchange.
+| State | Rule |
+|---|---|
+| **Safe** | At least `f + 1` different agents leave through the port and return from it. Since at most `f` agents are Byzantine, one returning witness must be honest. |
+| **Dangerous** | At least `f + 1` different agents leave through the port and do not return. |
+| **Unexplored** | Neither threshold has been reached yet. |
+
+The golden rule is enforced by the simulator: once a port is classified as
+dangerous, no future DFS move or probe is allowed to traverse it.
+
+### 2. Cascading Cautious Probe
+
+DFS chooses the next unexplored port, then CCP checks it without sending the
+whole team at once:
+
+1. **Initial scout group:** exactly `f + 1` non-blacklisted agents probe the
+   port.
+2. **Solo probing phase:** if the initial evidence is inconclusive, remaining
+   non-blacklisted agents probe one at a time.
+3. **Return-or-perish loop:** each solo agent attempts to enter the node and
+   return to the group.
+4. **Safety confirmed:** the port is marked safe as soon as `f + 1` distinct
+   agents have returned.
+5. **Danger confirmed:** the port is marked dangerous as soon as `f + 1`
+   distinct agents have failed to return.
+6. **Moving forward:** only after a port is certified safe does the surviving
+   group move across it and continue the DFS.
+
+The total probe budget for one port is capped at `2f + 1` agents, which is
+enough to overcome up to `f` Byzantine responses while still limiting losses.
+
+### 3. Catching Byzantine agents
+
+Byzantine agents are immune to the black hole and can behave arbitrarily. CCP
+exposes them through inconsistent probe outcomes:
+
+- If an agent returns from a port that is later certified **dangerous**, it is
+  blacklisted as Byzantine.
+- If an agent refuses to return from a port that is later certified **safe**,
+  it is blacklisted as Byzantine.
+- Blacklisted agents remain visible in the simulator, but they are permanently
+  excluded from future CCP probe groups.
+
+> ⚠️ This is a **teaching / visualisation prototype**. It models the threshold
+> logic of CCP and the DFS exploration strategy, while abstracting away lower
+> level details such as authentication and message scheduling.
 
 ---
 
