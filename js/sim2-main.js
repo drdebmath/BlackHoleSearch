@@ -118,7 +118,7 @@ function buildPathElements() {
 
 function addLog(text, style = 'info') {
   state.log.unshift({ round: state.round, text, style });
-  if (state.log.length > 18) state.log.pop();
+  if (state.log.length > 50) state.log.pop();
   try {
     const root = document.getElementById('log');
     if (root) {
@@ -164,7 +164,7 @@ function renderSim2() {
       const index = Number(node.id().slice(1));
       node.removeClass('homebase blackhole safe current');
       if (index === 0) node.addClass('homebase');
-      if (index === state.bhIndex && state.bhRevealed) node.addClass('blackhole');
+      if (index === state.bhIndex) node.addClass('blackhole');
       if (state.safeBoundary !== null && index <= state.safeBoundary) node.addClass('safe');
 
       const agentsHere = state.agents.filter(agent => agent.alive && agent.pos === index);
@@ -253,7 +253,7 @@ function checkBlackHoleActivation() {
       addLog(`Survivor(s) ${survivors.join(', ')} infer the BBH location from the missing formation.`, 'byz');
     }
   } else {
-    state.bhRevealed = false;
+    state.bhRevealed = true;
     addLog(`BBH withheld destruction at node ${state.bhIndex}; explorers mark the node suspicious.`, 'warn');
   }
 }
