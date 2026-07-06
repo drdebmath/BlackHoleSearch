@@ -184,6 +184,8 @@ function renderSim2() {
   q('sim2Dead').textContent = String(counts.dead);
   q('sim2Phase').textContent = phaseLabels[state.phase] || '—';
   q('sim2Boundary').textContent = state.safeBoundary === null ? 'unknown' : state.safeBoundary;
+  q('sim2ByzFound').textContent = state.bhLocated ? '1' : '0';
+  q('sim2EdgeDanger').textContent = state.bhLocated ? '1' : '0';
 
   const logRoot = q('sim2Log');
   if (!state.log.length) {
